@@ -361,6 +361,13 @@ class RegressionEstimator():
         self.scheduler = scheduler
 
     def fit(self, X_train, Y_train, X_valid=None, Y_valid=None):
+        """
+        :param X_train: ndarray, [n_samples, n_features]
+        :param Y_train: ndarray, [n_samples, ]
+        :param X_valid: ndarray, [n_samples, n_features]
+        :param Y_valid: ndarray, [n_samples, ]
+        :return:
+        """
         
         train_data = TensorDataset(X_train, Y_train)
         train_dataloader = DataLoader(dataset=train_data, batch_size=self.batch_size, shuffle=False)
@@ -527,24 +534,15 @@ class QuantileRegressionEstimator():
         return train_loss_history, validation_loss_history
 
     def predict(self, x):
-        
-        # n_ensemble = len(self.NNs)
-        # P = torch.zeros(n_ensemble, x.shape[0], self.q_num)
+        """
+        Predicts the output for the given input using the trained model.
 
-        # for b in range(n_ensemble):
+        Parameters:
+            x (torch.Tensor): The input data to be predicted.
 
-        #     model = self.NNs[b]
-        #     model.eval()
-        #     with torch.no_grad():
-        #         x = x.to(self.device)
-        #         pred = model(x)
-            
-        #     P[b, :, :] = pred.to(torch.float32)
-        
-        # res = P.mean(axis=0)
-        # res = res.numpy()
-        # res = res.squeeze()
-
+        Returns:
+            numpy.ndarray: The predicted output as a numpy array.
+        """
         self.model.eval()
         with torch.no_grad():
             x = x.to(self.device)

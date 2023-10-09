@@ -87,6 +87,7 @@ class NESCQR:
             selected_label.append(label_pool[best_label])
             if not replace:  # 无放回
                 model_pool_trained.pop(best_label)
+                label_pool.pop(best_label)
                 
         print(f'Model selected: {selected_label}')
 
@@ -168,8 +169,8 @@ class NESCQR:
         X_val   = X_val.to(self.device)
         X_test  = X_test.to(self.device)
 
-        pred = self.model_pool_selected[0].predict(X_val)
-        # print(f'pred.shape: {pred.shape}')
+        # pred = self.model_pool_selected[0].predict(X_val)
+        # # print(f'pred.shape: {pred.shape}')
         res_val = torch.stack([torch.from_numpy(model.predict(X_val)) for model in self.model_pool_selected])
         res_val = torch.mean(res_val, axis=0)
         res_val = res_val.detach().numpy()
@@ -182,7 +183,7 @@ class NESCQR:
         if inverse_normalization:  # 逆标准化回原来的量纲
             self.conf_PI = self.data_loader.inverse_transform(self.conf_PI, is_label=True)
 
-        cols = [str(round(alpha/2, 3)) for alpha in self.alpha_set] + [str(round(1-alpha/2, 3)) for alpha in self.alpha_set]
+        cols = [str(round(alpha/2, 3)) for alpha in self.alpha_set] + [str(round(1-alpha/2, 3)) for alpha in reversed(self.alpha_set)]
         if self.saveflag:
             df = pd.DataFrame(self.conf_PI, columns=cols)
             df.to_csv(os.path.join(self.save_dir,'conf_PIs.csv'), index=False)
@@ -233,33 +234,32 @@ class EnbPI():
             learner.fit(x_s_b, y_s_b, x_no_s_b, y_no_s_b)
             print('model: %d finished training.' % (b+1))  
 
-    def predict(self, x):
+    def predict_point(self, x):
         '''
-        回归预测。Point forecasting.
+        This function performs point forecasting.
 
-        out:
+        Args:
+        x: input data, ndarray, [N, ].
+
+        Returns:
         res: point forecasting results of x, ndarray, [N, ].
         '''
         n_ensemble = len(self.NNs)
-        P = torch.zeros(n_ensemble, x.shape[0], 1)
+        P = torch.zeros(n_ensemble, x.shape[0], 1, dtype=torch.float32, device=self.device)
 
         for b in range(n_ensemble):
-
             model = self.NNs[b]
             model.eval()
             with torch.no_grad():
-                x = x.to(self.device)
-                pred = model(x)
-            
-            P[b, :, :] = pred.to(torch.float32)
+                pred = model(x.to(self.device))
+
+            P[b, :, :] = pred
         
-        res = P.mean(axis=0)
-        res = res.numpy()
-        res = res.squeeze()
+        res = P.mean(axis=0).squeeze().cpu().numpy()
 
         return res
 
-    def conformal(self, X_train, Y_train, X_test, Y_test, step=None):
+    def predict_interval(self, X_train, Y_train, X_test, Y_test, step=None):
         '''
         区间预测。Interval prediction. fit完直接就可以调用来构造预测区间。
         
@@ -275,8 +275,8 @@ class EnbPI():
         if step == None:
             step = self.batch_size
 
-        res_train = self.predict(X_train)
-        res_test = self.predict(X_test)
+        res_train = self.predict_point(X_train)
+        res_test = self.predict_point(X_test)
         test_size = res_test.shape[0]
 
         C = np.zeros((test_size, num_alpha*2))
@@ -290,14 +290,16 @@ class EnbPI():
                 C[t, -(i+1)] = res_test[t] + Q[i]
 
                 if t % step == 0:
-                    print('t = %d, alpha = %.2f, Q[0] = %.4f, Q[1] = %.4f, Q[2] = %.4f, E.shape = %s' % (t,
-                             alpha, Q[0], Q[1], Q[2], str(E.shape)))
+                    # print('t = %d, alpha = %.2f, Q[0] = %.4f, Q[1] = %.4f, Q[2] = %.4f, E.shape = %s' % (t,
+                    #          alpha, Q[0], Q[1], Q[2], str(E.shape)))
                     for j in range(t - step, t-1):
                         e = abs(Y_test[j] - res_test[j])
                         E = np.delete(E, 0, 0)      #删除第一个元素
                         E = np.append(E, e)         #添加新的元素
              
         return C
+
+
 
 # def EnCQR(train_data, val_x, val_y, test_x, test_y, P):
     # """

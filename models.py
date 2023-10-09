@@ -567,23 +567,6 @@ class QuantileRegressionEstimator():
         return train_loss_history, validation_loss_history
 
     def predict(self, x):
-        
-        # n_ensemble = len(self.NNs)
-        # P = torch.zeros(n_ensemble, x.shape[0], self.q_num)
-
-        # for b in range(n_ensemble):
-
-        #     model = self.NNs[b]
-        #     model.eval()
-        #     with torch.no_grad():
-        #         x = x.to(self.device)
-        #         pred = model(x)
-            
-        #     P[b, :, :] = pred.to(torch.float32)
-        
-        # res = P.mean(axis=0)
-        # res = res.numpy()
-        # res = res.squeeze()
 
         self.model.eval()
         with torch.no_grad():
