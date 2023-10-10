@@ -7,32 +7,34 @@ from models import *
 from Losses import *
 from Metrics import evaluate, cross_bound_check
 from sklearn.preprocessing import StandardScaler
-from algorithms import NESCQR, EnbPI
+from algorithms import NESCQR, EnbPI, EnCQR
 from utils import plot_PI, TimeSeriesDataLoader
 
 
 args = {
-    'window_size': 2,    # 时间序列数据的窗口长度
-    'M': 3,              # 最终的集成模型的基学习器个数
-    'max_epochs': 600,   # 模型最大遍历次数
-    'l_rate': 1e-4,      # 学习率
-    'batch_size': 1024,  # batch size
-    'dropout': 0.2,      # 神经元丢弃率
-    'replace': False,    # NESCQR的前向选择是否有放回
-    'symmetric': True,   # conformity score是否对称
-    'saveflag': True,    # 是否保存结果数据
-    'save_dir': './results/',  # 结果保存路径
-    'step': 2,           # DMCQR算法更新步长，int, 越小更新越快越准确
-    'device': 'cuda',    # 使用的设备
-    'verbose': True,     # 是否冗余输出
-    'alpha_set': [0.05, 0.10, 0.15],  # 置信水平集合
-    'activation_fn': 'tanh',          # 激活函数
-    'num_repeat': 1,     # 每个类型的model有多少个
-    'kernel_size': 2,    # TCN模型的卷积核大小
-    'num_repeat': 1,     # 每个同类型的模型有多少个
+    'window_size'  : 2,                  # 时间序列数据的窗口长度
+    'M'            : 3,                  # 最终的集成模型的基学习器个数
+    'max_epochs'   : 500,                # 模型最大遍历次数
+    'l_rate'       : 1e-4,               # 学习率
+    'batch_size'   : 1024,               # batch size
+    'dropout'      : 0.2,                # 神经元丢弃率
+    'replace'      : False,              # NESCQR的前向选择是否有放回
+    'symmetric'    : True,               # conformity score是否对称
+    'saveflag'     : True,               # 是否保存结果数据
+    'save_dir'     : './results/',       # 结果保存路径
+    'step'         : 2,                  # DMCQR算法更新步长，int, 越小更新越快越准确
+    'device'       : 'cuda',             # 使用的设备
+    'verbose'      : True,               # 是否冗余输出
+    'alpha_set'    : [0.05, 0.10, 0.15], # 置信水平集合
+    'activation_fn': 'tanh',             # 激活函数
+    'hidden'       : 24,                 # 隐藏层神经元个数
+    'channel_size' : 10,                 # TCN模型的卷积核个数
+    'num_repeat'   : 1,                  # 每个类型的model有多少个
+    'kernel_size'  : 2,                  # TCN模型的卷积核大小
+    'num_repeat'   : 1,                  # 每个同类型的模型有多少个
 }
 
-def run_NESCQR(loader, df, X_train, Y_test, args, save_dir_NESCQR):
+def run_NESCQR(loader, x_size, args, save_dir_NESCQR):
     """
     Run NESCQR model on the given data.
     
@@ -46,14 +48,16 @@ def run_NESCQR(loader, df, X_train, Y_test, args, save_dir_NESCQR):
     """
 
     # Define model
-    alpha_base = max(args['alpha_set'])
-    quantiles = [max(args['alpha_set'])/2, 1 - max(args['alpha_set'])/2]
-    PINC = 100*(1 - np.array(args['alpha_set']))
-    input_dim = X_train.shape[1]
-    x_size = len(df.columns)
-    out_dim = len(quantiles)
-    hidden_units = [20 + i*4 for i in range(args['num_repeat'])]
-    channel_sizes = [3 + i*2 for i in range(args['num_repeat'])]
+    X_train, Y_train = loader.get_train_data(to_tensor=True)
+    X_val  , Y_val   = loader.get_val_data(to_tensor=True)
+    X_test , Y_test  = loader.get_test_data(to_tensor=True)
+    alpha_base    = max(args['alpha_set'])
+    quantiles     = [max(args['alpha_set'])/2, 1 - max(args['alpha_set'])/2]
+    PINC          = 100*(1 - np.array(args['alpha_set']))
+    input_dim     = X_train.shape[1]
+    out_dim       = len(quantiles)
+    hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
+    channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
 
     # NESCQR
     model_pool = [NET(input_dim, h, out_dim, args['activation_fn']) for h in hidden_units] + \
@@ -68,30 +72,144 @@ def run_NESCQR(loader, df, X_train, Y_test, args, save_dir_NESCQR):
                 [f'GRU_{h}' for h in hidden_units] + \
                 [f'TCN_{c}' for c in channel_sizes]
 
-    nescqr = NESCQR(loader, model_pool, label_pool, args['batch_size'], args['M'], args['alpha_set'], 
+    nescqr = NESCQR(model_pool, label_pool, args['batch_size'], args['M'], args['alpha_set'], 
                     args['l_rate'], args['max_epochs'], args['replace'], args['symmetric'], 
-                    args['saveflag'], save_dir_NESCQR, alpha_base, args['step'], 
-                    args['device'], args['verbose'])
+                    alpha_base, args['step'], args['device'], args['verbose'])
     
     start_time = time.time()
-    nescqr.fit()
-    PI_nescqr = nescqr.predict()
-    run_time = time.time() - start_time
+    nescqr.fit(X_train, Y_train, X_val, Y_val)
+    PI_nescqr = nescqr.predict(X_val, Y_val, X_test, Y_test)
+    run_time  = time.time() - start_time
     print(f'NESCQR run time: {run_time:.2f}s')
 
+    cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
+            [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
+    if args['saveflag']:
+        df = pd.DataFrame(PI_nescqr, columns=cols)
+        df.to_csv(os.path.join(save_dir_NESCQR,'conf_PIs.csv'), index=False)
+        print(f'Confidence intervals saved in {save_dir_NESCQR}/conf_PIs.csv')
+
     print('Evaluating NESCQR...')
-    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
-    res_nescqr = evaluate(Y_test_original, PI_nescqr, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_NESCQR)
+    Y_test_original  = loader.inverse_transform(Y_test, is_label=True)
+    PI_nescqr        = loader.inverse_transform(PI_nescqr, is_label=True)
+    res_nescqr       = evaluate(Y_test_original, PI_nescqr, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_NESCQR)
     res_nescqr_cross = cross_bound_check(PI_nescqr, saveflag=args['saveflag'], save_dir=save_dir_NESCQR)
 
     print('Plotting prediction intervals constructed by NESCQR...')
     colors = 'darkorange'
-    ind_show = range(0, 200)
-    plot_PI(PI_nescqr, PINC, Y_test_original, 'DMCQRS', save_dir_NESCQR, args['saveflag'], ind_show, color=colors, \
+    ind_show = range(0, 200) if len(PI_nescqr) > 200 else range(len(PI_nescqr))
+    plot_PI(PI_nescqr, PINC, Y_test_original, 'NESCQR', save_dir_NESCQR, args['saveflag'], ind_show, color=colors, \
             figsize=(16,12), fontsize=20,lw=0.5)
     print('NESCQR is done.')
 
 
+def run_EnbPI(loader, x_size, args, save_dir_enbpi):
+
+    X_train, Y_train = loader.get_train_data(to_tensor=True)
+    X_val  , Y_val   = loader.get_val_data(to_tensor=True)
+    X_test , Y_test  = loader.get_test_data(to_tensor=True)
+    X_train_enpi = torch.cat((X_train, X_val), axis=0)
+    Y_train_enpi = torch.cat((Y_train, Y_val), axis=0)
+    print(f'X_train_enpi.shape: {X_train_enpi.shape}, Y_train_enpi.shape: {Y_train_enpi.shape}')
+
+    # Define models
+    input_dim     = X_train.shape[1]
+    hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
+    channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
+    PINC          = 100*(1 - np.array(args['alpha_set']))
+
+    model_pool_enbpi = [NET(input_dim, h, 1, args['activation_fn']) for h in hidden_units] + \
+                [RNN(input_dim, h, 1, args['activation_fn'], args['device']) for h in hidden_units] + \
+                [LSTM(input_dim, h, 1, args['device']) for h in hidden_units] + \
+                [GRU(x_size, h, 1, args['device']) for h in hidden_units] + \
+                [TCN(x_size, 1, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+
+    enbpi = EnbPI(model_pool_enbpi, args['alpha_set'], args['l_rate'], args['max_epochs'],
+                   args['batch_size'], args['device'], args['verbose'])
+    
+    start_time = time.time()
+    enbpi.fit(X_train_enpi, Y_train_enpi)
+    conf_PI_enbpi = enbpi.predict_interval(X_train_enpi, Y_train_enpi, X_test, Y_test, args['step'])
+    run_time = time.time() - start_time
+    print(f'EnbPI run time: {run_time:.2f}s')
+
+    cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
+            [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
+    if args['saveflag']:
+        df = pd.DataFrame(conf_PI_enbpi, columns=cols)
+        df.to_csv(os.path.join(save_dir_enbpi,'conf_PIs.csv'), index=False)
+        print(f'Confidence intervals saved in {save_dir_enbpi}/conf_PIs.csv')
+
+    print('Evaluating EnbPI...')
+    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
+    conf_PI_enbpi   = loader.inverse_transform(conf_PI_enbpi, is_label=True)
+    res_enbpi       = evaluate(Y_test_original, conf_PI_enbpi, args['alpha_set'])
+    res_enbpi_cross = cross_bound_check(conf_PI_enbpi, saveflag=args['saveflag'], save_dir=save_dir_enbpi)
+
+    print('Plotting prediction intervals constructed by EnbPI...')
+    colors = 'darkorange'
+    ind_show = range(0, 200) if len(conf_PI_enbpi) > 200 else range(len(conf_PI_enbpi))
+    plot_PI(conf_PI_enbpi, PINC, Y_test_original, 'EnbPI', save_dir_enbpi, args['saveflag'], ind_show, color=colors, \
+            figsize=(16,12), fontsize=20,lw=0.5)
+    print('EnbPI is done.')
+
+def run_EnCQR(loader, x_size, args, save_dir_encqr):
+
+    X_train, Y_train = loader.get_train_data(to_tensor=True)
+    X_val  , Y_val   = loader.get_val_data(to_tensor=True)
+    X_test , Y_test  = loader.get_test_data(to_tensor=True)
+
+    # Define models
+    input_dim     = X_train.shape[1]
+    hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
+    channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
+    PINC          = 100*(1 - np.array(args['alpha_set']))
+
+    out_dim_encqr = len(args['alpha_set']) * 2
+    model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
+                [RNN(input_dim, h, out_dim_encqr, args['activation_fn'], args['device']) for h in hidden_units] + \
+                [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
+                [GRU(x_size, h, out_dim_encqr, args['device']) for h in hidden_units] + \
+                [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+
+    B = len(model_pool_encqr)
+    batch_len = int(np.floor(X_train.shape[0]/B))
+    # to_del = time_steps_in//time_steps_out # make sure there are no overlapping windows across batches
+    to_del = 0
+
+    train_data = []
+    for b in range(len(model_pool_encqr)):
+        # print(f'b: {b}, batch_len: {batch_len}, b*batch_len:{b*batch_len}, (b+1)*batch_len-to_del: {(b+1)*batch_len-to_del}')
+        train_data.append([X_train[b*batch_len:(b+1)*batch_len-to_del], Y_train[b*batch_len:(b+1)*batch_len-to_del]])
+
+    encqr = EnCQR(model_pool_encqr, args['alpha_set'], args['step'], args['batch_size'], args['l_rate'],\
+                   args['max_epochs'], args['device'], args['verbose'])
+    
+    start_time = time.time()
+    encqr.fit(train_data, X_val, Y_val)
+    PI_encqr, conf_PI_encqr = encqr.predict(X_test, Y_test)
+    run_time = time.time() - start_time
+    print(f'EnCQR run time: {run_time:.2f}s')
+
+    cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
+            [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
+    if args['saveflag']:
+        df = pd.DataFrame(conf_PI_encqr, columns=cols)
+        df.to_csv(os.path.join(save_dir_encqr,'conf_PIs.csv'), index=False)
+        print(f'Confidence intervals saved in {save_dir_encqr}/conf_PIs.csv')
+
+    print('Evaluating EnCQR...')
+    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
+    conf_PI_encqr   = loader.inverse_transform(conf_PI_encqr, is_label=True)
+    res_encqr       = evaluate(Y_test_original, conf_PI_encqr , args['alpha_set'])
+    res_encqr_cross = cross_bound_check(conf_PI_encqr , saveflag=args['saveflag'], save_dir=save_dir_encqr)
+
+    print('Plotting prediction intervals constructed by EnCQR...')
+    colors = 'darkorange'
+    ind_show = range(0, 200) if len(conf_PI_encqr) > 200 else range(len(conf_PI_encqr))
+    plot_PI(conf_PI_encqr, PINC, Y_test_original, 'EnCQR', save_dir_encqr, args['saveflag'], ind_show, color=colors, \
+            figsize=(16,12), fontsize=20,lw=0.5)
+    print('EnCQR is done.')
 
 def main():
 
@@ -99,8 +217,14 @@ def main():
     current_time    = time.strftime("%Y_%m_%d_%H_%M_%S")
     save_dir        = os.path.join("result", current_time)
     save_dir_NESCQR = os.path.join(save_dir, 'NESCQR')
+    save_dir_enbpi   = os.path.join(save_dir, 'EnbPI')
+    save_dir_encqr  = os.path.join(save_dir, 'EnCQR')
     if not os.path.exists(save_dir_NESCQR):
         os.makedirs(save_dir_NESCQR)
+    if not os.path.exists(save_dir_enbpi):
+        os.makedirs(save_dir_enbpi)
+    if not os.path.exists(save_dir_encqr):
+        os.makedirs(save_dir_encqr)
     print(f'save_dir: {save_dir}')
         
     # Load data
@@ -111,7 +235,8 @@ def main():
     df['WindDirection_sin'] = np.sin(df['WindDirection'])
     df['WindDirection_cos'] = np.cos(df['WindDirection'])
     df.drop('WindDirection', axis=1, inplace=True)
-    # df = df.iloc[:1000]
+    x_size = len(df.columns)
+    df = df.iloc[:1000]
 
     label_column = 'ActivePower'
     loader = TimeSeriesDataLoader(df, args['window_size'], label_column)
@@ -124,7 +249,9 @@ def main():
     print(f'X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}')
 
     ## NESCQR
-    run_NESCQR(loader,df, X_train, Y_test, args, save_dir_NESCQR)
+    run_NESCQR(loader, x_size, args, save_dir_NESCQR)
+    run_EnbPI(loader, x_size, args, save_dir_enbpi)
+    run_EnCQR(loader, x_size, args, save_dir_encqr)
 
 
 if __name__ == '__main__':

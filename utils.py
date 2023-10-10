@@ -169,10 +169,10 @@ def plot_PI(PI, PINC, y_test_true, title:str, resultFolder:str, saveflag:False,i
         plt.xlabel('x')
         plt.ylabel('y')
         plt.legend()
-        # plt.title('PIs constructed by %s'%title)
+        plt.title(title)
         plt.tight_layout(pad=1)
         if saveflag:
-            plt.savefig('{}_{}.svg'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
-            plt.savefig('{}_{}.png'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
+            plt.savefig('{}/{}.svg'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
+            plt.savefig('{}/{}.png'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
         else:
             plt.show()

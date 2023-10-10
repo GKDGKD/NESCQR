@@ -704,7 +704,7 @@ class EnCQR():
 
     def predict(self, x):
         '''
-        回归预测。Point forecasting.
+        分位数回归预测。
 
         out:
         res: point forecasting results of x, ndarray, [N, ].

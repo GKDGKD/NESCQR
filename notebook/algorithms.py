@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from models import QuantileRegressionEstimator, RegressionEstimator
 from Losses import PinballLoss
+from utils import asym_nonconformity
 
 class NESCQR:
     def __init__(self, model_pool:list, label_pool:list, batch_size:int, M:int, alpha_set:list, 
@@ -332,94 +333,151 @@ class EnbPI():
              
         return C
 
-# def EnCQR(train_data, val_x, val_y, test_x, test_y, P):
-#     """
-#     Parameters
-#     ----------
-#     train_data : list of data to train an ensemble of models
-#     test_x : input test data
-#     test_y : output test data
-#     P : dictionary of parameters
 
-#     Returns
-#     -------
-#     PI : original PI produced by the ensemble model
-#     conf_PI : PI after the conformalization
-#     """
+class EnCQR:
+    def __init__(self, model_pool, alpha_set, step, batch_size, l_rate, max_epochs, device, verbose):
+        """
+        Parameters
+        ----------
+        train_data : list of data to train an ensemble of models
+        test_x : input test data
+        test_y : output test data
 
-#     index = np.arange(P['B'])
-#     s = P['time_steps_out']
+
+        Returns
+        -------
+        PI : original PI produced by the ensemble model
+        conf_PI : PI after the conformalization
+        """
+
+        self.model_pool = model_pool
+        self.alpha_set  = alpha_set
+        self.num_alpha  = len(alpha_set)
+        self.step       = step
+        self.batch_size = batch_size
+        self.l_rate     = l_rate
+        self.max_epochs = max_epochs
+        self.device     = device
+        self.verbose    = verbose
+
+    def fit(self, train_data, val_x, val_y):
+        """
+        Train models.
+
+        Args:
+        train_data: list, [[x1, y1], [x2, y2], ...]
+        val_x: input validation data
+        val_y: output validation data
+        """
+
+        B = len(self.model_pool)
+        index = np.arange(B)
+        num_alpha = len(self.alpha_set)
     
-#     # dict containing LOO predictions
-#     dct_lo = {}
-#     dct_hi = {}
-#     for key in index:
-#       dct_lo['pred_%s' % key] = []
-#       dct_hi['pred_%s' % key] = []
-    
-#     # training a model for each sub set Sb
-#     ensemble_models = []
-#     for b in range(P['B']):
-#         f_hat_b = regression_model(P)
-#         f_hat_b.fit(train_data[index[b]][0], train_data[index[b]][1], val_x, val_y)
-#         ensemble_models.append(f_hat_b)
+        # dict containing LOO predictions
+        dct_lo = {}
+        dct_hi = {}
+        for key in index:
+            dct_lo['pred_%s' % key] = []
+            dct_hi['pred_%s' % key] = []
         
-#         # Leave-one-out predictions for each Sb
-#         indx_LOO = index[np.arange(len(index))!=b]
-#         for i in range(len(indx_LOO)):
-#             pred = f_hat_b.transform(train_data[indx_LOO[i]][0])
-#             dct_lo['pred_%s' %indx_LOO[i]].append(pred[:,:,0])
-#             dct_hi['pred_%s' %indx_LOO[i]].append(pred[:,:,2])
+        # training a model for each sub set Sb
+        self.ensemble_models = []
+        half = len(self.alpha_set)  # number of the alpha_set
+        for b in range(B):
+            print(f'-- EnCQR training: {b+1}/{B} NNs --')
+            x, y = train_data[b][0], train_data[b][1]
+            # print(f'b: {b}, x.shape: {x.shape}, y.shape: {y.shape}')
+            learner = QuantileRegressionEstimator(self.model_pool[b], self.alpha_set, self.max_epochs, \
+                                                  self.batch_size, self.device, self.l_rate, self.verbose)
+            learner.fit(x, y, val_x, val_y)
+            self.ensemble_models.append(learner)
+            # print(f'b: learner.quantiles: {learner.quantiles}')
             
-#     f_hat_b_agg_low  = np.zeros((train_data[index[0]][0].shape[0], P['time_steps_out'], P['B']))
-#     f_hat_b_agg_high = np.zeros((train_data[index[0]][0].shape[0], P['time_steps_out'], P['B']))
-#     for b in range(P['B']):
-#         f_hat_b_agg_low[:,:,b] = np.mean(dct_lo['pred_%s' %b],axis=0) 
-#         f_hat_b_agg_high[:,:,b] = np.mean(dct_hi['pred_%s' %b],axis=0)  
-        
-#     # residuals on the training data
-#     epsilon_low = []
-#     epsilon_hi=[]
-#     for b in range(P['B']):
-#         e_low, e_high = utils.asym_nonconformity(label=train_data[b][1], 
-#                                                   low=f_hat_b_agg_low[:,:,b], 
-#                                                   high=f_hat_b_agg_high[:,:,b])
-#         epsilon_low.append(e_low)
-#         epsilon_hi.append(e_high)
-#     epsilon_low = np.array(epsilon_low).flatten()
-#     epsilon_hi = np.array(epsilon_hi).flatten()
+            # Leave-one-out predictions for each Sb, TERRIBLE
+            # 在小样本上训练的模型去预测剩下的未见过的大样本，分位数表现非常糟糕
+            indx_LOO = index[np.arange(len(index))!=b]
+            print(f'b: {b}, indx_LOO: {indx_LOO}')
+            for i in range(len(indx_LOO)):
+                x_ = train_data[indx_LOO[i]][0]
+                # print(f'b: {b}, i: {i}, indx_LOO[i]: {indx_LOO[i]}, x_.shape: {x_.shape}')
+                pred = learner.predict(x_)
+                # print(f'i: {i}, pred.mean: {pred.mean(axis=0)}')
+                dct_lo['pred_%s' %indx_LOO[i]].append(pred[:, :half])
+                dct_hi['pred_%s' %indx_LOO[i]].append(pred[:, half:])
+
+        f_hat_b_agg_low  = np.zeros((train_data[index[0]][0].shape[0], half, B))
+        f_hat_b_agg_high = np.zeros((train_data[index[0]][0].shape[0], half, B))
+        for b in range(B):
+            f_hat_b_agg_low[:,:,b] = np.mean(dct_lo['pred_%s' %b],axis=0) 
+            f_hat_b_agg_high[:,:,b] = np.mean(dct_hi['pred_%s' %b],axis=0)  
             
-#     # Construct PIs for test data
-#     f_hat_t_batch = np.zeros((test_y.shape[0], test_y.shape[1], 3, P['B']))
-#     for b, model_b in enumerate(ensemble_models):
-#         f_hat_t_batch[:,:,:,b] = model_b.transform(test_x)
-#     PI  = np.mean(f_hat_t_batch,  axis=-1) 
-    
-#     # Conformalize prediction intervals on the test data
-#     conf_PI = np.zeros((test_y.shape[0], test_y.shape[1], 3))
-#     conf_PI[:,:,1] = PI[:,:,1]
-#     for i in range(test_y.shape[0]):   
-#         e_quantile_lo = np.quantile(epsilon_low, 1-P['alpha']/2)
-#         e_quantile_hi = np.quantile(epsilon_hi, 1-P['alpha']/2)
-#         conf_PI[i,:,0] = PI[i,:,0] - e_quantile_lo
-#         conf_PI[i,:,2] = PI[i,:,2] + e_quantile_hi
-    
-#         # update epsilon with the last s steps
-#         e_lo, e_hi = utils.asym_nonconformity(label=test_y[i,:],
-#                                                 low=PI[i,:,0],
-#                                                 high=PI[i,:,2])
-#         epsilon_low = np.delete(epsilon_low,slice(0,s,1))
-#         epsilon_hi = np.delete(epsilon_hi,slice(0,s,1))
-#         epsilon_low = np.append(epsilon_low, e_lo)
-#         epsilon_hi = np.append(epsilon_hi, e_hi)
+        # print(f'f_hat_b_agg_low.shape: {f_hat_b_agg_low.shape}, mean: {f_hat_b_agg_low.mean(axis=0)}')
+        # residuals on the training data
+        E_low, E_high = [], []
+        for i in range(self.num_alpha):
+            epsilon_low, epsilon_hi = [], []
+            for b in range(B):
+                e_low, e_high = asym_nonconformity(label=train_data[b][1].detach().numpy(), 
+                                                        low=f_hat_b_agg_low[:,i,b], 
+                                                        high=f_hat_b_agg_high[:,i,b])
+                epsilon_low.append(e_low)
+                epsilon_hi.append(e_high)
+            E_low.append(epsilon_low)
+            E_high.append(epsilon_hi)
+        self.E_low = np.array(E_low)
+        self.E_low = self.E_low.reshape(self.E_low.shape[1]*self.E_low.shape[2], self.num_alpha)
+        self.E_high = np.array(E_high)
+        self.E_high = self.E_high.reshape(self.E_high.shape[1]*self.E_high.shape[2], self.num_alpha)
+        # print(f'E_low.shape: {self.E_low.shape}, E_high.shape: {self.E_high.shape}')
+        # print(f'E_low.mean: {self.E_low.mean(axis=0)}, E_high.mean: {self.E_high.mean(axis=0)}')
+        print('EnCQR training is done.')
+
+    def predict(self, test_x, test_y, step=None):
+
+        # PI
+        res_test = np.zeros((len(self.ensemble_models), test_y.shape[0], len(self.alpha_set)*2))
+        for i, model in enumerate(self.ensemble_models):
+            pred = model.predict(test_x)
+            # print(f'pred.shape: {pred.shape}')
+            res_test[i, :, :] = model.predict(test_x)
+
+        res_test = np.mean(res_test, axis=0)
+        # print(f'res_test.shape: {res_test.shape}')
+        # print(f'res_test.mean: {res_test.mean(axis=0)}')
         
-#     return PI, conf_PI
+        # Conformal
+        test_size = res_test.shape[0]
+        if step == None:
+            step = self.step
 
+        # Initialize the asymmetric conformity scores.
+        C = np.zeros((test_size, self.num_alpha*2))
+        Q_low, Q_high = np.zeros((self.num_alpha,)), np.zeros((self.num_alpha,))
 
-    # # Make training batches
-    # batch_len = int(np.floor(train_x.shape[0]/B))
-    # to_del = time_steps_in//time_steps_out # make sure there are no overlapping windows across batches
-    # train_data = []
-    # for b in range(B):
-    #     train_data.append([train_x[b*batch_len:(b+1)*batch_len-to_del],\
-    #          train_y[b*batch_len:(b+1)*batch_len-to_del]])
+        # Comformalize the prediction intervals.
+        for t in range(test_size):
+            for i, alpha in enumerate(self.alpha_set):
+                
+                Q_low[i] = np.quantile(self.E_low[:, i], 1 - alpha / 2)
+                Q_high[-(i+1)] = np.quantile(self.E_high[:, -(i+1)], 1 - alpha / 2)
+
+                C[t, i] = res_test[t, i] - Q_low[i]
+                C[t, -(i+1)] = res_test[t, -(i+1)] + Q_high[-(i+1)]
+
+            # Update the lists of conformity scores
+            if t % step == 0 and step < test_size:
+                # print('t = %d, Q_low[0] = %f, Q_high[-1] = %f, E_low.shape = %s, E_high.shape = %s.' % 
+                #   (t,Q_low[0],Q_high[-1],str(E_low.shape), str(E_high.shape)))
+                for j in range(t - step, t-1):
+                    for i in range(self.num_alpha):
+                        e_low = res_test[j, i] - test_y[j]
+                        e_high = test_y[j] - res_test[j, -(i+1)]
+                        E_low_temp = np.delete(self.E_low[:,i], 0, 0)    #删除第一个元素
+                        E_low_temp = np.append(E_low_temp, e_low)   #添加新的元素
+                        self.E_low[:,i] = E_low_temp
+                        E_high_temp = np.delete(self.E_high[:,-(i+1)], 0, 0)
+                        E_high_temp = np.append(E_high_temp, e_high)
+                        self.E_high[:,-(i+1)] = E_high_temp   
+
+        return res_test, C
