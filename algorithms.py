@@ -45,8 +45,6 @@ class NESCQR:
         assert len(X_train) == len(Y_train)
         assert len(X_val)   == len(Y_val)
 
-
-
         num_models = len(self.model_pool)
         model_pool_trained = []
         for i, model in enumerate(self.model_pool):
