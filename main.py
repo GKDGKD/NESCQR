@@ -82,18 +82,18 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR):
     run_time  = time.time() - start_time
     print(f'NESCQR run time: {run_time:.2f}s')
 
-    cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
-            [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
-    if args['saveflag']:
-        df = pd.DataFrame(PI_nescqr, columns=cols)
-        df.to_csv(os.path.join(save_dir_NESCQR,'conf_PIs.csv'), index=False)
-        print(f'Confidence intervals saved in {save_dir_NESCQR}/conf_PIs.csv')
-
     print('Evaluating NESCQR...')
     Y_test_original  = loader.inverse_transform(Y_test, is_label=True)
     PI_nescqr        = loader.inverse_transform(PI_nescqr, is_label=True)
     res_nescqr       = evaluate(Y_test_original, PI_nescqr, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_NESCQR)
     res_nescqr_cross = cross_bound_check(PI_nescqr, saveflag=args['saveflag'], save_dir=save_dir_NESCQR)
+
+    cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
+            [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
+    if args['saveflag']:
+        df = pd.DataFrame(PI_nescqr, columns=cols)
+        df.to_csv(os.path.join(save_dir_NESCQR,'PI_NESCQR.csv'), index=False)
+        print(f'Confidence intervals saved in {save_dir_NESCQR}/conf_PIs.csv')
 
     print('Plotting prediction intervals constructed by NESCQR...')
     colors = 'darkorange'
@@ -133,18 +133,18 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi):
     run_time = time.time() - start_time
     print(f'EnbPI run time: {run_time:.2f}s')
 
+    print('Evaluating EnbPI...')
+    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
+    conf_PI_enbpi   = loader.inverse_transform(conf_PI_enbpi, is_label=True)
+    res_enbpi       = evaluate(Y_test_original, conf_PI_enbpi, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_enbpi)
+    res_enbpi_cross = cross_bound_check(conf_PI_enbpi, saveflag=args['saveflag'], save_dir=save_dir_enbpi)
+
     cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
             [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
     if args['saveflag']:
         df = pd.DataFrame(conf_PI_enbpi, columns=cols)
-        df.to_csv(os.path.join(save_dir_enbpi,'conf_PIs.csv'), index=False)
+        df.to_csv(os.path.join(save_dir_enbpi,'PI_EnbPI.csv'), index=False)
         print(f'Confidence intervals saved in {save_dir_enbpi}/conf_PIs.csv')
-
-    print('Evaluating EnbPI...')
-    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
-    conf_PI_enbpi   = loader.inverse_transform(conf_PI_enbpi, is_label=True)
-    res_enbpi       = evaluate(Y_test_original, conf_PI_enbpi, args['alpha_set'])
-    res_enbpi_cross = cross_bound_check(conf_PI_enbpi, saveflag=args['saveflag'], save_dir=save_dir_enbpi)
 
     print('Plotting prediction intervals constructed by EnbPI...')
     colors = 'darkorange'
@@ -191,18 +191,18 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr):
     run_time = time.time() - start_time
     print(f'EnCQR run time: {run_time:.2f}s')
 
+    print('Evaluating EnCQR...')
+    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
+    conf_PI_encqr   = loader.inverse_transform(conf_PI_encqr, is_label=True)
+    res_encqr       = evaluate(Y_test_original, conf_PI_encqr , args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_encqr)
+    res_encqr_cross = cross_bound_check(conf_PI_encqr , saveflag=args['saveflag'], save_dir=save_dir_encqr)
+
     cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
             [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
     if args['saveflag']:
         df = pd.DataFrame(conf_PI_encqr, columns=cols)
-        df.to_csv(os.path.join(save_dir_encqr,'conf_PIs.csv'), index=False)
+        df.to_csv(os.path.join(save_dir_encqr,'PI_EnCQR.csv'), index=False)
         print(f'Confidence intervals saved in {save_dir_encqr}/conf_PIs.csv')
-
-    print('Evaluating EnCQR...')
-    Y_test_original = loader.inverse_transform(Y_test, is_label=True)
-    conf_PI_encqr   = loader.inverse_transform(conf_PI_encqr, is_label=True)
-    res_encqr       = evaluate(Y_test_original, conf_PI_encqr , args['alpha_set'])
-    res_encqr_cross = cross_bound_check(conf_PI_encqr , saveflag=args['saveflag'], save_dir=save_dir_encqr)
 
     print('Plotting prediction intervals constructed by EnCQR...')
     colors = 'darkorange'
