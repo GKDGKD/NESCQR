@@ -1,9 +1,46 @@
 import numpy as np
 import torch.nn as nn
 import torch, time
+import pandas as pd
+from torch.autograd import Variable
 from torch.utils.data  import DataLoader, Dataset, TensorDataset
 from Losses import PinballLoss
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
+
+class power_data:
+    def __init__(self, data_name, train_ratio=0.9, time_step=2,
+                 start_num=5000, end_num=6000, x_size=3, **kwargs):
+        data = pd.read_csv(data_name)
+        data = data.dropna()
+        data_np = np.array(data[['onpower', "ws0"]][start_num:(end_num + time_step)])
+        data_min = data_np.min(axis=0)
+        data_max = data_np.max(axis=0)
+        data_1 = (data_np - data_min) / (data_max - data_min)
+        data_1[data_1 == 0] = 0.00001
+        data_1[data_1 == 1] = 0.99999
+        data_len = end_num - start_num
+        train_len = round(data_len * train_ratio)
+        X = np.zeros(shape=(end_num - start_num, x_size * time_step))
+
+        for i in range(time_step):
+            X[:, i] = data_1[i:(end_num - start_num + i), 0]
+        for i in range(1, x_size):
+            for j in range(time_step):
+                X[:, (i * time_step + j)] = data_1[j:(end_num - start_num + j), i]
+
+        self.y_train = data_1[time_step:(train_len + time_step), 0].reshape(-1, )
+        self.y_test = data_1[(train_len + time_step):, 0].reshape(-1, ).reshape(-1, )
+        self.y_train_yuan = data_np[time_step:(train_len + time_step), 0].reshape(-1, )
+        self.y_test_yuan = data_np[(train_len + time_step):, 0].reshape(-1, )
+
+        self.X_train = X[0:train_len, :]
+        self.X_test = X[train_len:, :]
+        self.data_max = data_max
+        self.data_min = data_min
+
+    def anti_mixmax(self, y):
+        data_anti = y * (self.data_max[0] - self.data_min[0]) + self.data_min[0]
+        return data_anti
 
 ## 简单神经网络
 class NET(nn.Module):
@@ -349,25 +386,19 @@ class TCN(nn.Module):
 
     
 class RegressionEstimator():
-    def __init__(self, model, crit, max_epochs, batch_size, device, optimizer, scheduler, verbose=False):
+    def __init__(self, model, crit, max_epochs, batch_size, device, optimizer, scheduler, verbose=False, logger=None):
 
-        self.model = model 
+        self.model      = model
         self.max_epochs = max_epochs
         self.batch_size = batch_size
-        self.device = device
-        self.verbose = verbose  #control whether output the training process, bool.
-        self.crit = crit  #loss function
-        self.optimizer = optimizer
-        self.scheduler = scheduler
+        self.device     = device
+        self.verbose    = verbose  #control whether output the training process, bool.
+        self.crit       = crit  #loss function
+        self.optimizer  = optimizer
+        self.scheduler  = scheduler
+        self.logger     = logger
 
     def fit(self, X_train, Y_train, X_valid=None, Y_valid=None):
-        """
-        :param X_train: ndarray, [n_samples, n_features]
-        :param Y_train: ndarray, [n_samples, ]
-        :param X_valid: ndarray, [n_samples, n_features]
-        :param Y_valid: ndarray, [n_samples, ]
-        :return:
-        """
         
         train_data = TensorDataset(X_train, Y_train)
         train_dataloader = DataLoader(dataset=train_data, batch_size=self.batch_size, shuffle=False)
@@ -423,8 +454,12 @@ class RegressionEstimator():
                 validation_loss = np.mean(np.array(loss_all))
                 validation_loss_history.append(validation_loss)
                 if self.verbose and (epoch+1) % 100 ==0:
-                    print('Epoch:{:d}, train_loss: {:.4f}, validation_loss: {:.4f}, cost_time: {:.2f}s'
-                    .format(epoch+1, train_loss, validation_loss, cost_time))
+                    if self.logger:
+                        self.logger.info('Epoch:{:d}, train_loss: {:.4f}, validation_loss: {:.4f}, cost_time: {:.2f}s'
+                                            .format(epoch+1, train_loss, validation_loss, cost_time))
+                    else:
+                        print('Epoch:{:d}, train_loss: {:.4f}, validation_loss: {:.4f}, cost_time: {:.2f}s'
+                                .format(epoch+1, train_loss, validation_loss, cost_time))
             else:
                 if self.verbose and (epoch+1) % 100 ==0:
                     print('Epoch:{:d}, train_loss: {:.4f}, cost_time: {:.2f}s'
@@ -445,25 +480,26 @@ class RegressionEstimator():
         return res
 
 class QuantileRegressionEstimator():
-    def __init__(self, model, alpha_set, max_epochs, batch_size, device, l_rate=0.001, verbose=False):
+    def __init__(self, model, alpha_set, max_epochs, batch_size, device, l_rate=0.001, verbose=False, logger=None):
 
-        self.model = model  #the list of models
-        self.alpha_set = alpha_set
+        self.model      = model  #the list of models
+        self.alpha_set  = alpha_set
         self.max_epochs = max_epochs
         self.batch_size = batch_size
-        self.device = device
-        self.l_rate = l_rate  #learning rate
-        self.verbose = verbose  #control whether output the training process, bool.
-        self.num_alpha = len(self.alpha_set)
-        self.quantiles = np.zeros(2*self.num_alpha)
+        self.device     = device
+        self.l_rate     = l_rate  #learning rate
+        self.verbose    = verbose  #control whether output the training process, bool.
+        self.num_alpha  = len(self.alpha_set)
+        self.quantiles  = np.zeros(2*self.num_alpha)
         for i in range(self.num_alpha):
             q_low = self.alpha_set[i] / 2
             q_high = 1 - q_low
             self.quantiles[i] = q_low
             self.quantiles[-(i+1)] = q_high
 
-        self.q_num = len(self.quantiles)
-        self.crit = PinballLoss(quantiles=self.quantiles)  #loss function
+        self.q_num  = len(self.quantiles)
+        self.crit   = PinballLoss(quantiles=self.quantiles)  #loss function
+        self.logger = logger
 
     def fit(self, X_train, Y_train, X_valid=None, Y_valid=None):
         
@@ -523,8 +559,12 @@ class QuantileRegressionEstimator():
                 validation_loss = np.mean(np.array(loss_all))
                 validation_loss_history.append(validation_loss)
                 if self.verbose and (epoch+1) % 100 ==0:
-                    print('Epoch:{:d}, train_loss: {:.4f}, validation_loss: {:.4f}, cost_time: {:.2f}s'
-                    .format(epoch+1, train_loss, validation_loss, cost_time))
+                    if self.logger:
+                        self.logger.info('Epoch:{:d}, train_loss: {:.4f}, validation_loss: {:.4f}, cost_time: {:.2f}s'
+                                            .format(epoch+1, train_loss, validation_loss, cost_time))
+                    else:
+                        print('Epoch:{:d}, train_loss: {:.4f}, validation_loss: {:.4f}, cost_time: {:.2f}s'
+                                .format(epoch+1, train_loss, validation_loss, cost_time))
             else:
                 if self.verbose and (epoch+1) % 100 ==0:
                     print('Epoch:{:d}, train_loss: {:.4f}, cost_time: {:.2f}s'
@@ -534,15 +574,7 @@ class QuantileRegressionEstimator():
         return train_loss_history, validation_loss_history
 
     def predict(self, x):
-        """
-        Predicts the output for the given input using the trained model.
 
-        Parameters:
-            x (torch.Tensor): The input data to be predicted.
-
-        Returns:
-            numpy.ndarray: The predicted output as a numpy array.
-        """
         self.model.eval()
         with torch.no_grad():
             x = x.to(self.device)
@@ -552,114 +584,6 @@ class QuantileRegressionEstimator():
     
         return res
 
-class EnbPI():
-    def __init__(self, NNs:list, alpha_set, l_rate:float, max_epochs:int, batch_size:int, device='cuda', verbose=True):
-        self.NNs = NNs   #集成学习模型，ensemble model, list.
-        self.crit = nn.MSELoss()  #loss function
-        self.l_rate = l_rate  #学习率
-        self.max_epochs = max_epochs
-        self.batch_size = batch_size  #越大更新越慢，int.
-        self.device = device
-        self.verbose = verbose  #是否输出中间过程
-        self.alpha_set = alpha_set
-
-    def fit(self, X_train, Y_train):
-        '''
-        将EnbPI拆分，此函数为回归学习器。
-        先回归，然后conformal得到预测区间上下界（均值加减）。
-        '''
-
-        train_size = X_train.shape[0]
-        n_ensemble = len(self.NNs)
-        S = np.arange(0, train_size)
-
-        for b in range(n_ensemble):
-            print('-- EnbPI training: ' + str(b+1) + ' of ' + str(n_ensemble) + ' NNs --')
-
-            s_b = np.random.choice(range(0, train_size), size=train_size, replace=True)
-            self.no_s_b = np.delete(S, s_b, 0)  #不在s_b子集的序号。
-            x_s_b = X_train[s_b, :]
-            y_s_b = Y_train[s_b].reshape(train_size, 1)
-
-            x_no_s_b = X_train[self.no_s_b, :]
-            y_no_s_b = Y_train[self.no_s_b].reshape(len(self.no_s_b), 1)
-            
-            if self.verbose:
-                print(f'x_s_b.shape = {x_s_b.shape}, y_s_b = {y_s_b.shape}, x_no_s_b.shape = {x_no_s_b.shape}, y_no_s_b.shape = {y_no_s_b.shape}')
-
-            model = self.NNs[b]
-            optimizer = torch.optim.Adam(model.parameters(), lr=self.l_rate)
-            scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)  #动态学习率调整
-
-            learner = RegressionEstimator(model, self.crit, self.max_epochs, self.batch_size, self.device, optimizer, scheduler, self.verbose)
-            learner.fit(x_s_b, y_s_b, x_no_s_b, y_no_s_b)
-            print('model: %d finished training.' % (b+1))  
-
-    def predict(self, x):
-        '''
-        回归预测。Point forecasting.
-
-        out:
-        res: point forecasting results of x, ndarray, [N, ].
-        '''
-        n_ensemble = len(self.NNs)
-        P = torch.zeros(n_ensemble, x.shape[0], 1)
-
-        for b in range(n_ensemble):
-
-            model = self.NNs[b]
-            model.eval()
-            with torch.no_grad():
-                x = x.to(self.device)
-                pred = model(x)
-            
-            P[b, :, :] = pred.to(torch.float32)
-        
-        res = P.mean(axis=0)
-        res = res.numpy()
-        res = res.squeeze()
-
-        return res
-
-    def conformal(self, X_train, Y_train, X_test, Y_test, step=None):
-        '''
-        区间预测。Interval prediction. fit完直接就可以调用来构造预测区间。
-        
-        input:
-        step: the update speed of the conformity score, smaller is faster, int, default: batch_size.
-
-        out:
-        C: prediction intervals.
-        '''
-        
-        Y_train, Y_test = np.array(Y_train), np.array(Y_test)
-        num_alpha = len(self.alpha_set)
-        if step == None:
-            step = self.batch_size
-
-        res_train = self.predict(X_train)
-        res_test = self.predict(X_test)
-        test_size = res_test.shape[0]
-
-        C = np.zeros((test_size, num_alpha*2))
-        Q = np.zeros(num_alpha) 
-        
-        for i, alpha in enumerate(self.alpha_set):
-            E = abs(res_train[self.no_s_b].reshape((len(self.no_s_b),1)) - Y_train[self.no_s_b].reshape((len(self.no_s_b),1)))
-            for t in range(test_size):
-                Q[i] = np.quantile(E, 1 - alpha)
-                C[t, i] = res_test[t] - Q[i]
-                C[t, -(i+1)] = res_test[t] + Q[i]
-
-                if t % step == 0:
-                    print('t = %d, alpha = %.2f, Q[0] = %.4f, Q[1] = %.4f, Q[2] = %.4f, E.shape = %s' % (t,
-                             alpha, Q[0], Q[1], Q[2], str(E.shape)))
-                    for j in range(t - step, t-1):
-                        e = abs(Y_test[j] - res_test[j])
-                        E = np.delete(E, 0, 0)      #删除第一个元素
-                        E = np.append(E, e)         #添加新的元素
-             
-        return C
 
 class EnCQR():
     def __init__(self, model, n_ensemble, alpha_set, l_rate:float, max_epochs:int, batch_size:int, device='cuda', verbose=True):
@@ -704,7 +628,7 @@ class EnCQR():
 
     def predict(self, x):
         '''
-        分位数回归预测。
+        回归预测。Point forecasting.
 
         out:
         res: point forecasting results of x, ndarray, [N, ].

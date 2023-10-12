@@ -9,7 +9,7 @@ from utils import asym_nonconformity
 class NESCQR:
     def __init__(self, model_pool:list, label_pool:list, batch_size:int, M:int, alpha_set:list, 
                  l_rate:float, max_epochs:int, replace, symmetric, alpha_base=None, step=2, \
-                 device='cuda', verbose=True):
+                 device='cuda', logger=None, verbose=True):
         assert 0 < M <= len(model_pool), "M must be in range (0, len(model_pool)]"
         self.model_pool  = model_pool
         self.label_pool  = label_pool  # 与model_pool里每个模型一一对应的模型名字
@@ -25,7 +25,7 @@ class NESCQR:
         self.replace     = replace    # 是否有放回地前向选择
         self.step        = step       # DMCQR算法更新步长，int, 越小更新越快越准确
         self.symmetric   = symmetric  # 是否采用对称性conformity score
-        # self.logger      = logger
+        self._logger     = logger.set_sub_logger('NESCQR')
         self.verbose     = verbose
         
     def init_training(self, X_train, Y_train, X_val, Y_val):
@@ -48,14 +48,14 @@ class NESCQR:
         num_models = len(self.model_pool)
         model_pool_trained = []
         for i, model in enumerate(self.model_pool):
-            print(f'NESCQR: Model {i+1}/{num_models} {self.label_pool[i]} starts training...')
+            self._logger.info(f'NESCQR: Model {i+1}/{num_models} {self.label_pool[i]} starts training...')
 
             # 采用DMCQR得到最终的预测区间，则只需要最大的alpha，即两条分位数即可得到多条预测区间上下界。
             learner = QuantileRegressionEstimator(model, [self.alpha_base], self.max_epochs,
-                                                   self.batch_size,self.device, self.l_rate, self.verbose)
+                                                   self.batch_size,self.device, self.l_rate, self.verbose, self._logger)
             learner.fit(X_train, Y_train, X_val, Y_val)
             model_pool_trained.append(learner)
-            print(f'Model {i+1}/{num_models} {self.label_pool[i]} finished training.')
+            self._logger.info(f'Model {i+1}/{num_models} {self.label_pool[i]} finished training.')
             
         return model_pool_trained
 
@@ -79,9 +79,9 @@ class NESCQR:
         X_val  , Y_val   = X_val.to(self.device), Y_val.to(self.device)
         # pool = dict(zip(label_pool, model_pool_trained))
         if replace:
-            print('Forward selection with replacement.')
+            self._logger.info('Forward selection with replacement.')
         else:
-            print('Forward selection without replacement.')
+            self._logger.info('Forward selection without replacement.')
 
         selected_model, selected_label = [], []
         while len(selected_model) < self.M:
@@ -99,11 +99,12 @@ class NESCQR:
 
             selected_model.append(best_model)
             selected_label.append(label_pool[best_label])
+            self._logger.info(f'{label_pool[best_label]} is selected.')
             if not replace:  # 无放回
                 model_pool_trained.pop(best_label)
                 label_pool.pop(best_label)
                 
-        print(f'Model selected: {selected_label}')
+        self._logger.info(f'The final ensemble models: {selected_label}')
 
         return selected_model, selected_label
 
@@ -124,7 +125,7 @@ class NESCQR:
 
         if symmetric:  
             # DMCQRS, use symmetric conformity score, 对称误差集合
-            print('Use symmetric conformity score to calibrate quantiles.')
+            self._logger.info('Use symmetric conformity score to calibrate quantiles.')
             E = list(np.max((res_val[:, 0] - Y_val, Y_val - res_val[:, -1]), axis=0))  # 误差集合，队列，先进先出
             Q = np.zeros(num_alpha)
 
@@ -135,7 +136,7 @@ class NESCQR:
                     conf_PI[:, -(i+1)] = res_test[:, -1] + Q[i]
 
                     if t % step == 0:
-                        # print(f't = {t}, Q = {Q}')
+                        # self._logger.info(f't = {t}, Q = {Q}')
                         for j in range(t - self.step, t - 1):
                             e = np.max((res_all[j, 0] - Y_all[j], Y_all[j] - res_all[j, -1]),axis=0)
                             E.pop(0)
@@ -145,7 +146,7 @@ class NESCQR:
         
         else:   
             # DMCQRS, use asymmetric conformity score, 非对称误差集合
-            print('Use asymmetric conformity score to calibrate quantiles.')
+            self._logger.info('Use asymmetric conformity score to calibrate quantiles.')
             Q_low, Q_high = np.zeros(num_alpha), np.zeros(num_alpha)
             E_low = list(res_val[:, 0] - Y_val)    # 下界误差集合
             E_high = list(Y_val - res_val[:,-1])   # 上界误差集合
@@ -159,7 +160,7 @@ class NESCQR:
                     conf_PI[:, -(i+1)] = res_test[:, -1] + Q_high[-(i+1)]
 
                 if t % step == 0:
-                    # print(f't: {t}, Q_low: {Q_low}, Q_high: {Q_high}')
+                    # self._logger.info(f't: {t}, Q_low: {Q_low}, Q_high: {Q_high}')
                     for j in range(t - step, t - 1):
                         e_low = res_all[j, 0] - Y_all[j]
                         e_high = Y_all[j] - res_all[j, -1]
@@ -185,14 +186,14 @@ class NESCQR:
         X_test  = X_test.to(self.device)
 
         # pred = self.model_pool_selected[0].predict(X_val)
-        # # print(f'pred.shape: {pred.shape}')
-        res_val = torch.stack([torch.from_numpy(model.predict(X_val)) for model in self.model_pool_selected])
-        res_val = torch.mean(res_val, axis=0)
-        res_val = res_val.detach().numpy()
+        # # self._logger.info(f'pred.shape: {pred.shape}')
+        res_val  = torch.stack([torch.from_numpy(model.predict(X_val)) for model in self.model_pool_selected])
+        res_val  = torch.mean(res_val, axis=0)
+        res_val  = res_val.detach().numpy()
         res_test = torch.stack([torch.from_numpy(model.predict(X_test)) for model in self.model_pool_selected])
         res_test = torch.mean(res_test, axis=0)
         res_test = res_test.detach().numpy()
-        # print(f'res_val.shape: {res_val.shape}, res_test.shape: {res_test.shape}')
+        # self._logger.info(f'res_val.shape: {res_val.shape}, res_test.shape: {res_test.shape}')
 
         self.conf_PI = self.conformal(res_val, Y_val, res_test, Y_test, self.step, self.symmetric)
   
@@ -200,15 +201,16 @@ class NESCQR:
     
 
 class EnbPI():
-    def __init__(self, NNs:list, alpha_set, l_rate:float, max_epochs:int, batch_size:int, device='cuda', verbose=True):
-        self.NNs = NNs   #集成学习模型，ensemble model, list.
-        self.crit = nn.MSELoss()  #loss function
-        self.l_rate = l_rate  #学习率
+    def __init__(self, NNs:list, alpha_set, l_rate:float, max_epochs:int, batch_size:int, device='cuda', logger=None, verbose=True):
+        self.NNs        = NNs   #集成学习模型，ensemble model, list.
+        self.crit       = nn.MSELoss()  #loss function
+        self.l_rate     = l_rate  #学习率
         self.max_epochs = max_epochs
         self.batch_size = batch_size  #越大更新越慢，int.
-        self.device = device
-        self.verbose = verbose  #是否输出中间过程
-        self.alpha_set = alpha_set
+        self.device     = device
+        self.verbose    = verbose  #是否输出中间过程
+        self.alpha_set  = alpha_set
+        self._logger    = logger.set_sub_logger('EnbPI')
 
     def fit(self, X_train, Y_train):
         '''
@@ -226,7 +228,7 @@ class EnbPI():
         S = np.arange(0, train_size)
 
         for b in range(n_ensemble):
-            print('-- EnbPI training: ' + str(b+1) + ' of ' + str(n_ensemble) + ' NNs --')
+            self._logger.info('-- EnbPI training: ' + str(b+1) + ' of ' + str(n_ensemble) + ' NNs --')
 
             s_b = np.random.choice(range(0, train_size), size=train_size, replace=True)
             self.no_s_b = np.delete(S, s_b, 0)  #不在s_b子集的序号。
@@ -237,15 +239,15 @@ class EnbPI():
             y_no_s_b = Y_train[self.no_s_b].reshape(len(self.no_s_b), 1)
             
             if self.verbose:
-                print(f'x_s_b.shape = {x_s_b.shape}, y_s_b = {y_s_b.shape}, x_no_s_b.shape = {x_no_s_b.shape}, y_no_s_b.shape = {y_no_s_b.shape}')
+                self._logger.info(f'x_s_b.shape = {x_s_b.shape}, y_s_b = {y_s_b.shape}, x_no_s_b.shape = {x_no_s_b.shape}, y_no_s_b.shape = {y_no_s_b.shape}')
 
             model = self.NNs[b]
             optimizer = torch.optim.Adam(model.parameters(), lr=self.l_rate)
             scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.9)  #动态学习率调整
 
-            learner = RegressionEstimator(model, self.crit, self.max_epochs, self.batch_size, self.device, optimizer, scheduler, self.verbose)
+            learner = RegressionEstimator(model, self.crit, self.max_epochs, self.batch_size, self.device, optimizer, scheduler, self.verbose, self._logger)
             learner.fit(x_s_b, y_s_b, x_no_s_b, y_no_s_b)
-            print('model: %d finished training.' % (b+1))  
+            self._logger.info('model: %d finished training.' % (b+1))  
 
     def predict_point(self, x):
         '''
@@ -309,7 +311,7 @@ class EnbPI():
                 C[t, -(i+1)] = res_test[t] + Q[i]
 
                 if t % step == 0:
-                    # print('t = %d, alpha = %.2f, Q[0] = %.4f, Q[1] = %.4f, Q[2] = %.4f, E.shape = %s' % (t,
+                    # self._logger.info('t = %d, alpha = %.2f, Q[0] = %.4f, Q[1] = %.4f, Q[2] = %.4f, E.shape = %s' % (t,
                     #          alpha, Q[0], Q[1], Q[2], str(E.shape)))
                     for j in range(t - step, t-1):
                         e = abs(Y_test[j] - res_test[j])
@@ -320,7 +322,7 @@ class EnbPI():
 
 
 class EnCQR:
-    def __init__(self, model_pool, alpha_set, step, batch_size, l_rate, max_epochs, device, verbose):
+    def __init__(self, model_pool, alpha_set, step, batch_size, l_rate, max_epochs, device, logger, verbose):
         """
         Parameters
         ----------
@@ -344,6 +346,7 @@ class EnCQR:
         self.max_epochs = max_epochs
         self.device     = device
         self.verbose    = verbose
+        self._logger     = logger.set_sub_logger('EnCQR')
 
     def fit(self, train_data, val_x, val_y):
         """
@@ -357,8 +360,7 @@ class EnCQR:
 
         B = len(self.model_pool)
         index = np.arange(B)
-        num_alpha = len(self.alpha_set)
-    
+
         # dict containing LOO predictions
         dct_lo = {}
         dct_hi = {}
@@ -370,24 +372,24 @@ class EnCQR:
         self.ensemble_models = []
         half = len(self.alpha_set)  # number of the alpha_set
         for b in range(B):
-            print(f'-- EnCQR training: {b+1}/{B} NNs --')
+            self._logger.info(f'-- EnCQR training: {b+1}/{B} NNs --')
             x, y = train_data[b][0], train_data[b][1]
-            # print(f'b: {b}, x.shape: {x.shape}, y.shape: {y.shape}')
+            # self._logger.info(f'b: {b}, x.shape: {x.shape}, y.shape: {y.shape}')
             learner = QuantileRegressionEstimator(self.model_pool[b], self.alpha_set, self.max_epochs, \
-                                                  self.batch_size, self.device, self.l_rate, self.verbose)
+                                                  self.batch_size, self.device, self.l_rate, self.verbose, self._logger)
             learner.fit(x, y, val_x, val_y)
             self.ensemble_models.append(learner)
-            # print(f'b: learner.quantiles: {learner.quantiles}')
+            # self._logger.info(f'b: learner.quantiles: {learner.quantiles}')
             
             # Leave-one-out predictions for each Sb, TERRIBLE
             # 在小样本上训练的模型去预测剩下的未见过的大样本，分位数表现非常糟糕
             indx_LOO = index[np.arange(len(index))!=b]
-            print(f'b: {b}, indx_LOO: {indx_LOO}')
+            self._logger.info(f'b: {b}, indx_LOO: {indx_LOO}')
             for i in range(len(indx_LOO)):
                 x_ = train_data[indx_LOO[i]][0]
-                # print(f'b: {b}, i: {i}, indx_LOO[i]: {indx_LOO[i]}, x_.shape: {x_.shape}')
+                # self._logger.info(f'b: {b}, i: {i}, indx_LOO[i]: {indx_LOO[i]}, x_.shape: {x_.shape}')
                 pred = learner.predict(x_)
-                # print(f'i: {i}, pred.mean: {pred.mean(axis=0)}')
+                # self._logger.info(f'i: {i}, pred.mean: {pred.mean(axis=0)}')
                 dct_lo['pred_%s' %indx_LOO[i]].append(pred[:, :half])
                 dct_hi['pred_%s' %indx_LOO[i]].append(pred[:, half:])
 
@@ -397,7 +399,7 @@ class EnCQR:
             f_hat_b_agg_low[:,:,b] = np.mean(dct_lo['pred_%s' %b],axis=0) 
             f_hat_b_agg_high[:,:,b] = np.mean(dct_hi['pred_%s' %b],axis=0)  
             
-        # print(f'f_hat_b_agg_low.shape: {f_hat_b_agg_low.shape}, mean: {f_hat_b_agg_low.mean(axis=0)}')
+        # self._logger.info(f'f_hat_b_agg_low.shape: {f_hat_b_agg_low.shape}, mean: {f_hat_b_agg_low.mean(axis=0)}')
         # residuals on the training data
         E_low, E_high = [], []
         for i in range(self.num_alpha):
@@ -414,9 +416,9 @@ class EnCQR:
         self.E_low = self.E_low.reshape(self.E_low.shape[1]*self.E_low.shape[2], self.num_alpha)
         self.E_high = np.array(E_high)
         self.E_high = self.E_high.reshape(self.E_high.shape[1]*self.E_high.shape[2], self.num_alpha)
-        # print(f'E_low.shape: {self.E_low.shape}, E_high.shape: {self.E_high.shape}')
-        # print(f'E_low.mean: {self.E_low.mean(axis=0)}, E_high.mean: {self.E_high.mean(axis=0)}')
-        print('EnCQR training is done.')
+        # self._logger.info(f'E_low.shape: {self.E_low.shape}, E_high.shape: {self.E_high.shape}')
+        # self._logger.info(f'E_low.mean: {self.E_low.mean(axis=0)}, E_high.mean: {self.E_high.mean(axis=0)}')
+        self._logger.info('EnCQR training is done.')
 
     def predict(self, test_x, test_y, step=None):
 
@@ -424,12 +426,12 @@ class EnCQR:
         res_test = np.zeros((len(self.ensemble_models), test_y.shape[0], len(self.alpha_set)*2))
         for i, model in enumerate(self.ensemble_models):
             pred = model.predict(test_x)
-            # print(f'pred.shape: {pred.shape}')
+            # self._logger.info(f'pred.shape: {pred.shape}')
             res_test[i, :, :] = model.predict(test_x)
 
         res_test = np.mean(res_test, axis=0)
-        # print(f'res_test.shape: {res_test.shape}')
-        # print(f'res_test.mean: {res_test.mean(axis=0)}')
+        # self._logger.info(f'res_test.shape: {res_test.shape}')
+        # self._logger.info(f'res_test.mean: {res_test.mean(axis=0)}')
         
         # Conformal
         test_size = res_test.shape[0]
@@ -452,7 +454,7 @@ class EnCQR:
 
             # Update the lists of conformity scores
             if t % step == 0 and step < test_size:
-                # print('t = %d, Q_low[0] = %f, Q_high[-1] = %f, E_low.shape = %s, E_high.shape = %s.' % 
+                # self._logger.info('t = %d, Q_low[0] = %f, Q_high[-1] = %f, E_low.shape = %s, E_high.shape = %s.' % 
                 #   (t,Q_low[0],Q_high[-1],str(E_low.shape), str(E_high.shape)))
                 for j in range(t - step, t-1):
                     for i in range(self.num_alpha):

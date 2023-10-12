@@ -32,10 +32,8 @@ def interval_indexs(y_test, y_lower, y_upper):
 
     """
     in_the_range = np.sum((y_test >= y_lower) & (y_test <= y_upper))
-    coverage = in_the_range / len(y_test) * 100
-    avg_length = np.mean(abs(y_upper - y_lower))
-    print("PICP:",coverage)
-    print("MPIW:", avg_length)
+    coverage = in_the_range / len(y_test) * 100  # PICP
+    avg_length = np.mean(abs(y_upper - y_lower)) # MPIW 
     
     return coverage, avg_length
 
@@ -112,7 +110,7 @@ def interval_score(y_test, lower, upper, alpha):
                             2 / alpha * (y_test - upper) * (y_test > upper)
     return np.mean(score)
 
-def metrics(y_test, y_lower, y_upper, alpha, ita=0.5, saveflag=False, save_dir=None):
+def metrics(y_test, y_lower, y_upper, alpha, ita=0.5, saveflag=False, save_dir=None, logger=None):
     '''
     回归 + 区间预测评估(单个区间)。
     
@@ -141,7 +139,13 @@ def metrics(y_test, y_lower, y_upper, alpha, ita=0.5, saveflag=False, save_dir=N
     RMSE = np.sqrt(MSE)
     CRPS = crps(y_pred, y_test)
     SDE = sde(y_pred, y_test)
-    print('Regression: {:.4f}, MSE: {:.4f}, RMSE: {:.4f}, CRPS: {:.4f}, SDE: {:.4f}'.format(PINC, MAE,
+
+    if logger:
+        logger.set_sub_logger('Metrics')
+        logger.info('Regression: {:.4f}, MSE: {:.4f}, RMSE: {:.4f}, CRPS: {:.4f}, SDE: {:.4f}'.format(PINC, MAE,
+                                    MSE, RMSE, CRPS, SDE))
+    else:
+        print('Regression: {:.4f}, MSE: {:.4f}, RMSE: {:.4f}, CRPS: {:.4f}, SDE: {:.4f}'.format(PINC, MAE,
                                     MSE, RMSE, CRPS, SDE))
     
     # Presdicion interval
@@ -180,7 +184,7 @@ def metrics(y_test, y_lower, y_upper, alpha, ita=0.5, saveflag=False, save_dir=N
     else:
         return df
 
-def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, verbose=True):
+def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, Logger=None):
     """
     对所有预测区间进行评估。
 
@@ -199,7 +203,10 @@ def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, ver
     y_test = np.array(y_test)
     if y_test.ndim > 1:
         y_test = y_test.squeeze()
-    
+    if Logger:
+        Logger.set_sub_logger('Metrics')
+        logger = Logger.logger
+
     result = []
     for i, alpha in enumerate(alpha_set):
         y_lower, y_upper = PIs[:, i], PIs[:, -(i+1)]
@@ -224,11 +231,17 @@ def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, ver
         CWC = PINAW * (1 + gamma * np.exp(-ita*ACE))
         score = interval_score(y_test, y_lower, y_upper, alpha)
 
-        if verbose:
+        if Logger:
+            logger.info('PINC: {:.0f}%, MAE: {:.4f}, MSE: {:.4f}, RMSE: {:.4f}, CRPS: {:.4f}, SDE: {:.4f}'.format(PINC, MAE,
+                                                MSE, RMSE, CRPS, SDE))
+            logger.info('PINC: {:.0f}%, PICP: {:.4f}, MPIW: {:.4f}, PINAW: {:.4f}, F: {:.4f}, ACE: {:.4f}, CWC: {:.4f}, \
+                    interval_score: {:.4f}'.format(PINC, PICP, MPIW, PINAW, F, ACE, CWC, score))
+        else:
             print('PINC: {:.0f}%, MAE: {:.4f}, MSE: {:.4f}, RMSE: {:.4f}, CRPS: {:.4f}, SDE: {:.4f}'.format(PINC, MAE,
                                             MSE, RMSE, CRPS, SDE))
             print('PINC: {:.0f}%, PICP: {:.4f}, MPIW: {:.4f}, PINAW: {:.4f}, F: {:.4f}, ACE: {:.4f}, CWC: {:.4f}, \
                   interval_score: {:.4f}'.format(PINC, PICP, MPIW, PINAW, F, ACE, CWC, score))
+            
         result.append([PINC, MAE, MSE, RMSE, CRPS, SDE, PICP, MPIW, F, PINAW, ACE, CWC, score])
 
     result_df = pd.DataFrame(result, columns=['PINC','MAE', 'MSE', 'RMSE', 'CRPS', 'SDE', 'PICP', 'MPIW', 'F', 'PINAW', 'ACE', 'CWC', 'Interval score'])
@@ -240,7 +253,7 @@ def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, ver
         return result_df
 
 
-def cross_bound_check(prediction, saveflag=False, save_dir=None):
+def cross_bound_check(prediction, saveflag=False, save_dir=None, Logger=None):
     '''
     检查是否有区间耦合、交叉现象。
     
@@ -256,6 +269,9 @@ def cross_bound_check(prediction, saveflag=False, save_dir=None):
     '''
     
     assert prediction.shape[1] > 1
+    if Logger:
+        Logger.set_sub_logger('Metrics')
+        logger = Logger.logger
     
     prediction = np.array(prediction)
     m, n = prediction.shape
@@ -275,7 +291,7 @@ def cross_bound_check(prediction, saveflag=False, save_dir=None):
         m2 = l[:, r] * (PI_lower[:, r] - PI_lower[:, r+1])
         l1 = l[:, r].sum()
 
-        # print('r = %d, l1 = %.4f, u1 = %.4f'%(r, l1, u1))
+        print('r = %d, l1 = %.4f, u1 = %.4f'%(r, l1, u1))
         if u1 == 0:
             MUCW += 0
         else:
@@ -287,16 +303,28 @@ def cross_bound_check(prediction, saveflag=False, save_dir=None):
             MLCW += m2.sum() / l1
             
     if u.sum() or l.sum() > 0:
-        print('Cross-bound phenomenon exists.')
-        print('l.sum() = ', l.sum())
-        print('u.sum() = ', u.sum())
-        print('MUCW = %.4f, MLCW = %.4f'%(MUCW, MLCW))
+        if Logger:
+            logger.info('Cross-bound phenomenon exists.')
+            logger.info(f'l.sum() = {l.sum()}, u.sum() = {u.sum()}')
+            logger.info('MUCW = {:.4f}, MLCW = {:.4f}'.format(MUCW, MLCW))
+        else:
+            print('Cross-bound phenomenon exists.')
+            print('l.sum() = ', l.sum())
+            print('u.sum() = ', u.sum())
+            print('MUCW = %.4f, MLCW = %.4f'%(MUCW, MLCW))
     else:
-        print('No cross-bound phenomenon.')
-        print('MUCW = %.4f, MLCW = %.4f'% (MUCW, MLCW))
+        if Logger:
+            logger.info('No cross-bound phenomenon.')
+            logger.info('MUCW = {:.4f}, MLCW = {:.4f}'.format(MUCW, MLCW))
+        else:
+            print('No cross-bound phenomenon.')
+            print('MUCW = %.4f, MLCW = %.4f'% (MUCW, MLCW))
         
     Cross_loss = cross_loss(prediction)
-    print('Cross loss: ', Cross_loss)
+    if logger:
+        logger.info(f'Cross loss: {Cross_loss}')
+    else:
+        print('Cross loss: ', Cross_loss)
 
     df = pd.DataFrame({'MUCW': [MUCW], 'MLCW': [MLCW], 'Cross loss': [Cross_loss]})
     if saveflag:

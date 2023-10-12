@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 import scienceplots
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 class power_data:
     def __init__(self, data_name, train_ratio=0.9, time_step=2,
@@ -41,18 +41,23 @@ class power_data:
         return data_anti
 
 class TimeSeriesDataLoader:
-    def __init__(self, data, window_size, label_column, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15, scaler=None):
+    def __init__(self, data, window_size, label_column, scaler='minmax', train_ratio=0.7, \
+                 val_ratio=0.15, test_ratio=0.15):
         self.data         = data
         self.window_size  = window_size
         self.label_column = label_column
         self.train_ratio  = train_ratio
         self.val_ratio    = val_ratio
         self.test_ratio   = test_ratio
-        self.scaler       = scaler
-
-        self.train_X, self.train_y = None, None
-        self.val_X, self.val_y = None, None
-        self.test_X, self.test_y = None, None
+        # self.scaler       = scaler
+        if scaler == 'minmax':
+            self.scaler_x     = MinMaxScaler()
+            self.scaler_y     = MinMaxScaler()
+        elif scaler == 'standard':
+            self.scaler_x     = StandardScaler()
+            self.scaler_y     = StandardScaler()
+        else:
+            raise ValueError('scaler must be minmax or standard')
 
         self._prepare_data()
 
@@ -64,13 +69,9 @@ class TimeSeriesDataLoader:
         X = self.data.drop(columns=[self.label_column]).values
         y = self.data[self.label_column].values
 
-        # 处理缺失值（如果有）
-        # 进行标准化（如果需要）
-        if self.scaler is None:
-            self.scaler_x = StandardScaler()
-            self.scaler_y = StandardScaler()
-            X = self.scaler_x.fit_transform(X)
-            y = self.scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
+        # 进行标准化
+        X = self.scaler_x.fit_transform(X)
+        y = self.scaler_y.fit_transform(y.reshape(-1, 1)).flatten()
 
         data = np.concatenate((X, y.reshape(-1, 1)), axis=1)
         # 生成窗口数据
@@ -169,10 +170,10 @@ def plot_PI(PI, PINC, y_test_true, title:str, resultFolder:str, saveflag:False,i
         plt.xlabel('x')
         plt.ylabel('y')
         plt.legend()
-        # plt.title('PIs constructed by %s'%title)
+        plt.title(title)
         plt.tight_layout(pad=1)
         if saveflag:
-            plt.savefig('{}_{}.svg'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
-            plt.savefig('{}_{}.png'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
+            plt.savefig('{}/{}.svg'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
+            plt.savefig('{}/{}.png'.format(resultFolder, title), dpi=save_dpi, bbox_inches='tight')
         else:
             plt.show()
