@@ -19,12 +19,12 @@ args = {
     'test_ratio'   : 0.15,                     # 测试集比例
     'window_size'  : 2,                        # 时间序列数据的窗口长度
     'n_ensembles'  : 3,                        # NESCQR最终的集成模型的基学习器个数
-    'max_epochs'   : 200,                      # 模型最大遍历次数
+    'max_epochs'   : 500,                      # 模型最大遍历次数
     'l_rate'       : 1e-4,                     # 学习率
     'batch_size'   : 1024,                     # batch size
     'dropout'      : 0.2,                      # 神经元丢弃率
     'replace'      : False,                    # NESCQR的前向选择是否有放回
-    'symmetric'    : True,                     # conformity score是否对称
+    'symmetric'    : False,                    # conformity score是否对称
     'saveflag'     : True,                     # 是否保存结果数据
     'save_dir'     : './results/',             # 结果保存路径
     'step'         : 2,                        # DMCQR算法更新步长，int, 越小更新越快越准确
@@ -98,7 +98,7 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
     if args['saveflag']:
         df = pd.DataFrame(PI_nescqr, columns=cols)
         df.to_csv(os.path.join(save_dir_NESCQR,'PI_NESCQR.csv'), index=False)
-        logger.logger.info(f'Confidence intervals saved in {save_dir_NESCQR}/conf_PIs.csv')
+        logger.logger.info(f'Confidence intervals saved in {save_dir_NESCQR}\conf_PIs.csv')
 
     logger.logger.info('Plotting prediction intervals constructed by NESCQR...')
     colors = 'darkorange'
@@ -119,16 +119,23 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
 
     # Define models
     input_dim     = X_train.shape[1]
-    hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
-    channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
+    # hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
+    # channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
     PINC          = 100*(1 - np.array(args['alpha_set']))
 
-    model_pool_enbpi = [NET(input_dim, h, 1, args['activation_fn']) for h in hidden_units] + \
-                [RNN(input_dim, h, 1, args['activation_fn'], args['device']) for h in hidden_units] + \
-                [LSTM(input_dim, h, 1, args['device']) for h in hidden_units] + \
-                [GRU(x_size, h, 1, args['device']) for h in hidden_units] + \
-                [TCN(x_size, 1, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+    # model_pool_enbpi = [NET(input_dim, h, 1, args['activation_fn']) for h in hidden_units] + \
+    #             [RNN(input_dim, h, 1, args['activation_fn'], args['device']) for h in hidden_units] + \
+    #             [LSTM(input_dim, h, 1, args['device']) for h in hidden_units] + \
+    #             [GRU(x_size, h, 1, args['device']) for h in hidden_units] + \
+    #             [TCN(x_size, 1, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+    
+    ## Homogeneous models
+    # model_pool_enbpi = [TCN(x_size, 1, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
+    # label_model_pool = [f'TCN_{args["channel_size"]}']*3 # 全用TCN表现太好了，预测区间都快重合成一条线了
+    model_pool_enbpi = [LSTM(input_dim, args['hidden'], 1, args['device'])] * args['n_ensembles']
+    label_model_pool = [f'LSTM_{args["hidden"]}']*3 
 
+    logger.logger.info(f'model_pool_enbpi: {label_model_pool}')
     enbpi = EnbPI(model_pool_enbpi, args['alpha_set'], args['l_rate'], args['max_epochs'],
                    args['batch_size'], args['device'], logger, args['verbose'])
     
@@ -149,7 +156,7 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
     if args['saveflag']:
         df = pd.DataFrame(conf_PI_enbpi, columns=cols)
         df.to_csv(os.path.join(save_dir_enbpi,'PI_EnbPI.csv'), index=False)
-        logger.logger.info(f'Confidence intervals saved in {save_dir_enbpi}/conf_PIs.csv')
+        logger.logger.info(f'Confidence intervals saved in {save_dir_enbpi}\conf_PIs.csv')
 
     logger.logger.info('Plotting prediction intervals constructed by EnbPI...')
     colors = 'darkorange'
@@ -166,8 +173,8 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
 
     # Define models
     input_dim     = X_train.shape[1]
-    hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
-    channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
+    # hidden_units  = [args['hidden'] + i*4 for i in range(args['num_repeat'])]
+    # channel_sizes = [args['channel_size'] + i*2 for i in range(args['num_repeat'])]
     PINC          = 100*(1 - np.array(args['alpha_set']))
 
     out_dim_encqr = len(args['alpha_set']) * 2
@@ -176,8 +183,13 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
     #             [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
     #             [GRU(x_size, h, out_dim_encqr, args['device']) for h in hidden_units] + \
     #             [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
-    model_pool_encqr = [TCN(x_size, out_dim_encqr, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
 
+    # model_pool_encqr = [TCN(x_size, out_dim_encqr, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
+    # label_model_pool = [f'TCN_{args["channel_size"]}']*3
+    model_pool_encqr = [LSTM(input_dim, args['hidden'], out_dim_encqr, args['device'])] * args['n_ensembles']
+    label_model_pool = [f'LSTM_{args["hidden"]}']*3 
+
+    logger.logger.info(f'model_pool_encqr: {label_model_pool}')
     B = len(model_pool_encqr)
     batch_len = int(np.floor(X_train.shape[0]/B))
     # to_del = time_steps_in//time_steps_out # make sure there are no overlapping windows across batches
@@ -208,7 +220,7 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
     if args['saveflag']:
         df = pd.DataFrame(conf_PI_encqr, columns=cols)
         df.to_csv(os.path.join(save_dir_encqr,'PI_EnCQR.csv'), index=False)
-        logger.logger.info(f'Confidence intervals saved in {save_dir_encqr}/conf_PIs.csv')
+        logger.logger.info(f'Confidence intervals saved in {save_dir_encqr}\conf_PIs.csv')
 
     logger.logger.info('Plotting prediction intervals constructed by EnCQR...')
     colors = 'darkorange'
@@ -255,7 +267,7 @@ def main():
     df['WindDirection_cos'] = np.cos(df['WindDirection'])
     df.drop('WindDirection', axis=1, inplace=True)
     x_size = len(df.columns)
-    df = df.iloc[:1000]
+    # df = df.iloc[:1000]
 
     label_column = 'ActivePower'
     loader = TimeSeriesDataLoader(df, args['window_size'], label_column, args['scaler'],

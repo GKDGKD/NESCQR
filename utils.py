@@ -165,7 +165,7 @@ def plot_PI(PI, PINC, y_test_true, title:str, resultFolder:str, saveflag:False,i
         for i in range(len(PINC)):
             plt.plot(x[ind_show], PI[ind_show, i], color=color, lw=lw) 
             plt.plot(x[ind_show], PI[ind_show, -(i+1)], color=color, lw=lw) 
-            plt.fill_between(x[ind_show], PI[ind_show, i], PI[ind_show, -(i+1)], color=color, alpha=alphas[i],label='%d%% confidence PI'%(PINC[i]))
+            plt.fill_between(x[ind_show], PI[ind_show, i], PI[ind_show, -(i+1)], color=color, alpha=alphas[i],label='{:.0f}% confidence PI'.format(PINC[i]))
 
         plt.xlabel('x')
         plt.ylabel('y')
