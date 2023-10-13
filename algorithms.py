@@ -55,7 +55,7 @@ class NESCQR:
                                                    self.batch_size,self.device, self.l_rate, self.verbose, self._logger)
             learner.fit(X_train, Y_train, X_val, Y_val)
             model_pool_trained.append(learner)
-            self._logger.info(f'Model {i+1}/{num_models} {self.label_pool[i]} finished training.')
+            # self._logger.info(f'Model {i+1}/{num_models} {self.label_pool[i]} finished training.')
             
         return model_pool_trained
 
