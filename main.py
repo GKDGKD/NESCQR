@@ -10,7 +10,6 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from algorithms import NESCQR, EnbPI, EnCQR
 from utils import plot_PI, TimeSeriesDataLoader
 from log.logutli import Logger
-from log.demo import print_logger
 
 
 args = {
@@ -172,11 +171,12 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
     PINC          = 100*(1 - np.array(args['alpha_set']))
 
     out_dim_encqr = len(args['alpha_set']) * 2
-    model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
-                [RNN(input_dim, h, out_dim_encqr, args['activation_fn'], args['device']) for h in hidden_units] + \
-                [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
-                [GRU(x_size, h, out_dim_encqr, args['device']) for h in hidden_units] + \
-                [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+    # model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
+    #             [RNN(input_dim, h, out_dim_encqr, args['activation_fn'], args['device']) for h in hidden_units] + \
+    #             [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
+    #             [GRU(x_size, h, out_dim_encqr, args['device']) for h in hidden_units] + \
+    #             [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+    model_pool_encqr = [TCN(x_size, out_dim_encqr, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
 
     B = len(model_pool_encqr)
     batch_len = int(np.floor(X_train.shape[0]/B))
@@ -188,7 +188,7 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
         # logger.info(f'b: {b}, batch_len: {batch_len}, b*batch_len:{b*batch_len}, (b+1)*batch_len-to_del: {(b+1)*batch_len-to_del}')
         train_data.append([X_train[b*batch_len:(b+1)*batch_len-to_del], Y_train[b*batch_len:(b+1)*batch_len-to_del]])
 
-    encqr = EnCQR(model_pool_encqr, args['alpha_set'], args['step'], args['batch_size'], args['l_rate'],\
+    encqr = EnCQR(model_pool_encqr, args['alpha_set'], args['batch_size'], args['batch_size'], args['l_rate'],\
                    args['max_epochs'], args['device'], logger, args['verbose'])
     
     start_time = time.time()
