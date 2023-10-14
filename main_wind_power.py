@@ -261,7 +261,7 @@ def main():
     
     start_time = time.time()
     current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(start_time))
-    save_dir     = os.path.join("result", current_time)
+    save_dir     = os.path.join("result", 'Wind Power', current_time)
     log_id       = 'main'
     log_name     = f'Run_{current_time}.log'
     log_level    = 'info'
