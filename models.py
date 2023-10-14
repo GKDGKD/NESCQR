@@ -6,8 +6,8 @@ import pandas as pd
 from torch.autograd import Variable
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from Losses import PinballLoss
-# from torch.nn.utils.parametrizations import weight_norm  # torch==2.0+cpu
-from torch.nn.utils import weight_norm  # torch==2.0+cu118
+from torch.nn.utils.parametrizations import weight_norm  # torch==2.0+cpu
+# from torch.nn.utils import weight_norm  # torch==2.0+cu118
 
 
 class power_data:

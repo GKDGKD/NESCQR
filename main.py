@@ -19,9 +19,9 @@ args = {
     'test_ratio'   : 0.15,                     # 测试集比例
     'window_size'  : 2,                        # 时间序列数据的窗口长度
     'n_ensembles'  : 3,                        # NESCQR最终的集成模型的基学习器个数
-    'max_epochs'   : 300,                      # 模型最大遍历次数
+    'max_epochs'   : 100,                      # 模型最大遍历次数
     'l_rate'       : 1e-4,                     # 学习率
-    'batch_size'   : 1024,                     # batch size
+    'batch_size'   : int(128),                     # batch size
     'dropout'      : 0.2,                      # 神经元丢弃率
     'replace'      : True,                     # NESCQR的前向选择是否有放回
     'symmetric'    : True,                     # conformity score是否对称
@@ -107,7 +107,7 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
             figsize=(16,12), fontsize=20,lw=0.5)
     logger.logger.info('NESCQR is done.')
 
-    return res_nescqr, res_nescqr_cross
+    return res_nescqr, res_nescqr_cross, run_time
 
 
 def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
@@ -173,7 +173,7 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
             figsize=(16,12), fontsize=20,lw=0.5)
     logger.logger.info('EnbPI is done.')
 
-    return res_enbpi, res_enbpi_cross
+    return res_enbpi, res_enbpi_cross, run_time
 
 def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
 
@@ -253,7 +253,7 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
             figsize=(16,12), fontsize=20,lw=0.5)
     logger.logger.info('EnCQR is done.')
 
-    return res_encqr, res_encqr_cross
+    return res_encqr, res_encqr_cross, run_time
 
 def main():
 
@@ -294,7 +294,7 @@ def main():
     df['WindDirection_cos'] = np.cos(df['WindDirection'])
     df.drop('WindDirection', axis=1, inplace=True)
     x_size = len(df.columns)
-    # df = df.iloc[:1000]
+    df = df.iloc[:1000]
 
     label_column = 'ActivePower'
     loader = TimeSeriesDataLoader(df, args['window_size'], label_column, args['scaler'],
@@ -308,9 +308,9 @@ def main():
     logger.logger.info(f'X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}')
 
     ## Run
-    res_nescqr, res_nescqr_cross = run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger)
-    res_enbpi, res_enbpi_cross = run_EnbPI(loader, x_size, args, save_dir_enbpi, logger)
-    res_encqr, res_encqr_cross = run_EnCQR(loader, x_size, args, save_dir_encqr, logger)
+    res_nescqr, res_nescqr_cross, run_time_nescqr = run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger)
+    res_enbpi, res_enbpi_cross, run_time_enbpi = run_EnbPI(loader, x_size, args, save_dir_enbpi, logger)
+    res_encqr, res_encqr_cross, run_time_encqr = run_EnCQR(loader, x_size, args, save_dir_encqr, logger)
 
     # Save results
     methods = ['NESCQR', 'EnbPI', 'EnCQR']
@@ -324,9 +324,10 @@ def main():
     concat_df_cross = pd.concat(dfs_cross, keys=methods, names=['Method'])
     if 'Unnamed: 0' in concat_df_cross.columns:
         concat_df_cross.drop(columns=['Unnamed: 0'], inplace=True)
+    concat_df_cross['Run_time'] = [run_time_nescqr, run_time_enbpi, run_time_encqr]
     concat_df_cross.reset_index(level=1, drop=True, inplace=True)
 
-    excel_file = os.path.join(data_path, 'summary.xlsx')
+    excel_file = os.path.join(save_dir, 'summary.xlsx')
     # 创建 ExcelWriter 对象
     with pd.ExcelWriter(excel_file) as writer:
         # 将 DataFrame 写入不同 sheet
