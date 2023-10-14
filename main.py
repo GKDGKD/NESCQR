@@ -23,8 +23,8 @@ args = {
     'l_rate'       : 1e-4,                     # 学习率
     'batch_size'   : 1024,                     # batch size
     'dropout'      : 0.2,                      # 神经元丢弃率
-    'replace'      : False,                    # NESCQR的前向选择是否有放回
-    'symmetric'    : False,                    # conformity score是否对称
+    'replace'      : True,                     # NESCQR的前向选择是否有放回
+    'symmetric'    : True,                     # conformity score是否对称
     'saveflag'     : True,                     # 是否保存结果数据
     'step'         : 2,                        # DMCQR算法更新步长，int, 越小更新越快越准确
     'device'       : 'cuda',                   # 使用的设备
@@ -107,6 +107,8 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
             figsize=(16,12), fontsize=20,lw=0.5)
     logger.logger.info('NESCQR is done.')
 
+    return res_nescqr, res_nescqr_cross
+
 
 def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
 
@@ -170,6 +172,8 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
     plot_PI(conf_PI_enbpi, PINC, Y_test_original, 'EnbPI', save_dir_enbpi, args['saveflag'], ind_show, color=colors, \
             figsize=(16,12), fontsize=20,lw=0.5)
     logger.logger.info('EnbPI is done.')
+
+    return res_enbpi, res_enbpi_cross
 
 def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
 
@@ -249,17 +253,20 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
             figsize=(16,12), fontsize=20,lw=0.5)
     logger.logger.info('EnCQR is done.')
 
+    return res_encqr, res_encqr_cross
+
 def main():
 
     # Logger
-    current_time = time.strftime("%Y_%m_%d_%H_%M_%S")
+    
+    start_time = time.time()
+    current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(start_time))
     save_dir     = os.path.join("result", current_time)
     log_id       = 'main'
     log_name     = f'Run_{current_time}.log'
     log_level    = 'info'
     logger       = Logger(log_id, save_dir, log_name, log_level)
-    logger.logger.info("LOCAL TIME: " + \
-        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+    logger.logger.info(f"LOCAL TIME: {current_time}")
     
     # 结果保存路径
     save_dir_NESCQR = os.path.join(save_dir, 'NESCQR')
@@ -301,12 +308,34 @@ def main():
     logger.logger.info(f'X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}')
 
     ## Run
-    run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger)
-    run_EnbPI(loader, x_size, args, save_dir_enbpi, logger)
-    run_EnCQR(loader, x_size, args, save_dir_encqr, logger)
+    res_nescqr, res_nescqr_cross = run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger)
+    res_enbpi, res_enbpi_cross = run_EnbPI(loader, x_size, args, save_dir_enbpi, logger)
+    res_encqr, res_encqr_cross = run_EnCQR(loader, x_size, args, save_dir_encqr, logger)
 
-    total_time = time.time() - current_time
-    logger.logger.info(f'Finished. Total time used: {total_time}s, {total_time/60*60}h.')
+    # Save results
+    methods = ['NESCQR', 'EnbPI', 'EnCQR']
+    dfs = [res_nescqr, res_enbpi, res_encqr]
+    concat_df = pd.concat(dfs, keys=methods, names=['Method'])
+    if 'Unnamed: 0' in concat_df.columns:
+        concat_df.drop(columns=['Unnamed: 0'], inplace=True)
+    concat_df.reset_index(level=1, drop=True, inplace=True)
+
+    dfs_cross = [res_nescqr_cross, res_enbpi_cross, res_encqr_cross]
+    concat_df_cross = pd.concat(dfs_cross, keys=methods, names=['Method'])
+    if 'Unnamed: 0' in concat_df_cross.columns:
+        concat_df_cross.drop(columns=['Unnamed: 0'], inplace=True)
+    concat_df_cross.reset_index(level=1, drop=True, inplace=True)
+
+    excel_file = os.path.join(data_path, 'summary.xlsx')
+    # 创建 ExcelWriter 对象
+    with pd.ExcelWriter(excel_file) as writer:
+        # 将 DataFrame 写入不同 sheet
+        concat_df.to_excel(writer, sheet_name='Metrics', index=['Method'])
+        concat_df_cross.to_excel(writer, sheet_name='Cross', index=['Method'])
+
+    logger.logger.info('Results saved.')
+    total_time = time.time() - start_time
+    logger.logger.info(f'Finished. Total time used: {round(total_time, 2)}s, {round(total_time/(60*60), 2)}h.')
 
 if __name__ == '__main__':
     main()
