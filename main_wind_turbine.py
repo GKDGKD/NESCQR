@@ -2,6 +2,7 @@ import torch, time, os
 import torch.nn as nn
 import numpy as np
 import pandas as pd
+import json
 import matplotlib.pyplot as plt
 from models import *
 # from Losses import *
@@ -11,32 +12,6 @@ from algorithms import NESCQR, EnbPI, EnCQR
 from utils import plot_PI, TimeSeriesDataLoader
 from log.logutli import Logger
 
-
-args = {
-    'scaler'       : 'minmax',                 # 标准化方式，'minmax', 'standard'
-    'train_ratio'  : 0.7,                      # 训练集比例
-    'val_ratio'    : 0.15,                     # 验证集比例
-    'test_ratio'   : 0.15,                     # 测试集比例
-    'window_size'  : 2,                        # 时间序列数据的窗口长度
-    'n_ensembles'  : 3,                        # NESCQR最终的集成模型的基学习器个数
-    'max_epochs'   : 100,                      # 模型最大遍历次数
-    'l_rate'       : 1e-4,                     # 学习率
-    'batch_size'   : int(128),                     # batch size
-    'dropout'      : 0.2,                      # 神经元丢弃率
-    'replace'      : True,                     # NESCQR的前向选择是否有放回
-    'symmetric'    : True,                     # conformity score是否对称
-    'saveflag'     : True,                     # 是否保存结果数据
-    'step'         : 2,                        # DMCQR算法更新步长，int, 越小更新越快越准确
-    'device'       : 'cuda',                   # 使用的设备
-    'verbose'      : True,                     # 是否冗余输出中间训练过程
-    'alpha_set'    : [0.05, 0.10, 0.15],       # 置信水平集合
-    'activation_fn': 'tanh',                   # 激活函数
-    'hidden'       : 24,                       # 隐藏层神经元个数
-    'channel_size' : 10,                       # TCN模型的卷积核个数
-    'num_repeat'   : 1,                        # 每个类型的model有多少个
-    'kernel_size'  : 2,                        # TCN模型的卷积核大小
-    'num_repeat'   : 1,                        # 每个同类型的模型有多少个
-}
 
 def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
     """
@@ -77,6 +52,7 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
                 [f'GRU_{h}' for h in hidden_units] + \
                 [f'TCN_{c}' for c in channel_sizes]
 
+    logger.logger.info(f'model_pool_nescqr: {label_pool}')
     nescqr = NESCQR(model_pool, label_pool, args['batch_size'], args['n_ensembles'], args['alpha_set'], 
                     args['l_rate'], args['max_epochs'], args['replace'], args['symmetric'], 
                     alpha_base, args['step'], args['device'], logger, args['verbose'])
@@ -258,7 +234,6 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
 def main():
 
     # Logger
-    
     start_time = time.time()
     current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(start_time))
     save_dir     = os.path.join("result", 'Wind Turbine', current_time)
@@ -280,6 +255,8 @@ def main():
         os.makedirs(save_dir_encqr)
     logger.logger.info(f'save_dir: {save_dir}')
 
+    with open('config.json', 'r') as f:
+        args = json.load(f)
     logger.logger.info('Parameters: ')
     for k, v in args.items():
         logger.logger.info(f'{k}: {v}')
