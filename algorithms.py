@@ -60,7 +60,6 @@ class NESCQR:
         return model_pool_trained
 
     def forward_selection(self, X_val, Y_val, model_pool_trained, label_pool, replace=True):
-        # 前向选择出最优集成模型组合
         """
         前向选择出最优集成模型组合. 
         Find the best combination of the ensemble model through forward selection.
@@ -124,15 +123,15 @@ class NESCQR:
         test_size = len(Y_test)
 
         if symmetric:  
-            # DMCQRS, use symmetric conformity score, 对称误差集合
+            # Symmetric conformity score, 对称误差集合
             self._logger.info('Use symmetric conformity score to calibrate quantiles.')
             E = list(np.max((res_val[:, 0] - Y_val, Y_val - res_val[:, -1]), axis=0))  # 误差集合，队列，先进先出
             Q = np.zeros(num_alpha)
 
             for t in range(val_size, val_size + test_size):
                 for i, alpha in enumerate(self.alpha_set):
-                    Q[i] = np.quantile(E, (1-alpha)*(1+1/val_size))
-                    conf_PI[:, i] = res_test[:, 0] - Q[i]
+                    Q[i]               = np.quantile(E, (1-alpha)*(1+1/val_size))
+                    conf_PI[:, i]      = res_test[:, 0] - Q[i]
                     conf_PI[:, -(i+1)] = res_test[:, -1] + Q[i]
 
                     if t % step == 0:
@@ -145,10 +144,10 @@ class NESCQR:
             return conf_PI
         
         else:   
-            # DMCQRS, use asymmetric conformity score, 非对称误差集合
+            # Asymmetric conformity score, 非对称误差集合
             self._logger.info('Use asymmetric conformity score to calibrate quantiles.')
             Q_low, Q_high = np.zeros(num_alpha), np.zeros(num_alpha)
-            E_low = list(res_val[:, 0] - Y_val)    # 下界误差集合
+            E_low  = list(res_val[:, 0] - Y_val)    # 下界误差集合
             E_high = list(Y_val - res_val[:,-1])   # 上界误差集合
                 
             for t in range(val_size, val_size + test_size):

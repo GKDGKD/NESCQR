@@ -165,23 +165,23 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
     PINC          = 100*(1 - np.array(args['alpha_set']))
 
     out_dim_encqr = len(args['alpha_set']) * 2
-    # model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
-    #             [RNN(input_dim, h, out_dim_encqr, args['activation_fn'], args['device']) for h in hidden_units] + \
-    #             [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
-    #             [GRU(x_size, h, out_dim_encqr, args['device']) for h in hidden_units] + \
-    #             [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
-    # label_model_pool = [f'NET_{h}' for h in hidden_units] + \
-    #             [f'RNN_{h}' for h in hidden_units] + \
-    #             [f'LSTM_{h}' for h in hidden_units] + \
-    #             [f'GRU_{h}' for h in hidden_units] + \
-    #             [f'TCN_{c}' for c in channel_sizes]
-    
     model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
+                [RNN(input_dim, h, out_dim_encqr, args['activation_fn'], args['device']) for h in hidden_units] + \
                 [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
+                [GRU(x_size, h, out_dim_encqr, args['device']) for h in hidden_units] + \
                 [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
     label_model_pool = [f'NET_{h}' for h in hidden_units] + \
+                [f'RNN_{h}' for h in hidden_units] + \
                 [f'LSTM_{h}' for h in hidden_units] + \
+                [f'GRU_{h}' for h in hidden_units] + \
                 [f'TCN_{c}' for c in channel_sizes]
+    
+    # model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
+    #             [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
+    #             [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
+    # label_model_pool = [f'NET_{h}' for h in hidden_units] + \
+    #             [f'LSTM_{h}' for h in hidden_units] + \
+    #             [f'TCN_{c}' for c in channel_sizes]
 
     # Homogenous models
     # model_pool_encqr = [TCN(x_size, out_dim_encqr, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
