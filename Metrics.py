@@ -100,7 +100,8 @@ def reliability(y_pred, y_true, alpha):
 
 def interval_score(y_test, lower, upper, alpha):
     """
-    PICP和MPIW的综合，越小越准确。The combination of PICP and MPIW, smaller is better.
+    PICP和MPIW的综合，越小越准确。
+    The combination of PICP and MPIW, smaller is better.
     
     Reference:
     Gneiting, Tilmann, and Adrian E. Raftery. "Strictly proper scoring rules, prediction, and estimation." Journal of the American statistical Association 102.477 (2007): 359-378.

@@ -73,6 +73,7 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
             [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
     if args['saveflag']:
         df = pd.DataFrame(PI_nescqr, columns=cols)
+        df['y_test_original'] = Y_test_original
         df.to_csv(os.path.join(save_dir_NESCQR,'PI_NESCQR.csv'), index=False)
         logger.logger.info(f'Confidence intervals saved in {save_dir_NESCQR}\conf_PIs.csv')
 
@@ -139,6 +140,7 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
             [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
     if args['saveflag']:
         df = pd.DataFrame(conf_PI_enbpi, columns=cols)
+        df['y_test_original'] = Y_test_original
         df.to_csv(os.path.join(save_dir_enbpi,'PI_EnbPI.csv'), index=False)
         logger.logger.info(f'Confidence intervals saved in {save_dir_enbpi}\conf_PIs.csv')
 
@@ -219,6 +221,7 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
             [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
     if args['saveflag']:
         df = pd.DataFrame(conf_PI_encqr, columns=cols)
+        df['y_test_original'] = Y_test_original
         df.to_csv(os.path.join(save_dir_encqr,'PI_EnCQR.csv'), index=False)
         logger.logger.info(f'Confidence intervals saved in {save_dir_encqr}\conf_PIs.csv')
 
@@ -270,8 +273,9 @@ def main():
     df['WindDirection_sin'] = np.sin(df['WindDirection'])
     df['WindDirection_cos'] = np.cos(df['WindDirection'])
     df.drop('WindDirection', axis=1, inplace=True)
+    logger.logger.info(f'data.shape: {df.shape}')
     x_size = len(df.columns)
-    df = df.iloc[:1000]
+    # df = df.iloc[:1000]
 
     label_column = 'ActivePower'
     loader = TimeSeriesDataLoader(df, args['window_size'], label_column, args['scaler'],
@@ -279,6 +283,10 @@ def main():
     X_train, Y_train = loader.get_train_data()
     X_val  , Y_val   = loader.get_val_data()
     X_test , Y_test  = loader.get_test_data()
+
+    # Y_test_original = loader.inverse_transform(Y_test, is_label=True)
+    # df_y_test = pd.DataFrame(Y_test_original, columns=['y_test_original'])
+    # df_y_test.to_csv('./data/Kaggle Wind Power Forecasting Data/Y_test_original.csv', index=False)
 
     logger.logger.info(f'X_train.shape: {X_train.shape}, Y_train.shape: {Y_train.shape}')
     logger.logger.info(f'X_val.shape: {X_val.shape}, Y_val.shape: {Y_val.shape}')
