@@ -13,21 +13,33 @@ from utils import plot_PI, TimeSeriesDataLoader
 from log.logutli import Logger
 
 
-def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
+def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger, replace=None):
     """
     Run NESCQR model on the given data.
     
     Args:
         loader: Data loader object.
-        df: Dataframe containing the data.
-        X_train: Training data.
-        Y_test: Testing data.
+        x_size: Number of features in X_train, int.
         args: Dictionary of arguments.
         save_dir_NESCQR: Directory to save NESCQR results.
+        logger: Logger object for logging messages.
+        replace: Whether to replace model into the model pool in forward selection. Bool.
+    
+    Returns:
+        res_nescqr: Evaluation results of NESCQR model.
+        res_nescqr_cross: Cross-bound check results of NESCQR model.
+        run_time: Time taken to run the NESCQR model.
     """
 
     # Define model
-    logger.logger.info(f'NESCQR starts.')
+    if replace is None:
+        model_str = 'NESCQR'
+    elif replace:
+        model_str = 'NESCQR_r'
+    else:
+        model_str = 'NESCQR_n'
+
+    logger.logger.info(f'{model_str} starts.')
     X_train, Y_train = loader.get_train_data(to_tensor=True)
     X_val  , Y_val   = loader.get_val_data(to_tensor=True)
     X_test , Y_test  = loader.get_test_data(to_tensor=True)
@@ -53,17 +65,22 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
                 [f'TCN_{c}' for c in channel_sizes]
 
     logger.logger.info(f'model_pool_nescqr: {label_pool}')
-    nescqr = NESCQR(model_pool, label_pool, args['batch_size'], args['n_ensembles'], args['alpha_set'], 
-                    args['l_rate'], args['max_epochs'], args['replace'], args['symmetric'], 
+    if replace is not None:
+        nescqr = NESCQR(model_pool, label_pool, args['batch_size'], args['n_ensembles'], args['alpha_set'], 
+                    args['l_rate'], args['max_epochs'], replace, args['symmetric'], 
                     alpha_base, args['step'], args['device'], logger, args['verbose'])
+    else: 
+        nescqr = NESCQR(model_pool, label_pool, args['batch_size'], args['n_ensembles'], args['alpha_set'], 
+                        args['l_rate'], args['max_epochs'], args['replace'], args['symmetric'], 
+                        alpha_base, args['step'], args['device'], logger, args['verbose'])
     
     start_time = time.time()
     nescqr.fit(X_train, Y_train, X_val, Y_val)
     PI_nescqr = nescqr.predict(X_val, Y_val, X_test, Y_test)
     run_time  = time.time() - start_time
-    logger.logger.info(f'NESCQR run time: {run_time:.2f}s')
+    logger.logger.info(f'{model_str} run time: {run_time:.2f}s')
 
-    logger.logger.info('Evaluating NESCQR...')
+    logger.logger.info(f'Evaluating {model_str}...')
     Y_test_original  = loader.inverse_transform(Y_test, is_label=True)
     PI_nescqr        = loader.inverse_transform(PI_nescqr, is_label=True)
     res_nescqr       = evaluate(Y_test_original, PI_nescqr, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_NESCQR, Logger=logger)
@@ -74,15 +91,15 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger):
     if args['saveflag']:
         df = pd.DataFrame(PI_nescqr, columns=cols)
         df['y_test_original'] = Y_test_original
-        df.to_csv(os.path.join(save_dir_NESCQR,'PI_NESCQR.csv'), index=False)
+        df.to_csv(os.path.join(save_dir_NESCQR, f'PI_{model_str}.csv'), index=False)
         logger.logger.info(f'Confidence intervals saved in {save_dir_NESCQR}\conf_PIs.csv')
 
-    logger.logger.info('Plotting prediction intervals constructed by NESCQR...')
+    logger.logger.info(f'Plotting prediction intervals...')
     colors = 'darkorange'
     ind_show = range(0, 200) if len(PI_nescqr) > 200 else range(len(PI_nescqr))
-    plot_PI(PI_nescqr, PINC, Y_test_original, 'NESCQR', save_dir_NESCQR, args['saveflag'], ind_show, color=colors, \
+    plot_PI(PI_nescqr, PINC, Y_test_original, model_str, save_dir_NESCQR, args['saveflag'], ind_show, color=colors, \
             figsize=(16,12), fontsize=20,lw=0.5)
-    logger.logger.info('NESCQR is done.')
+    logger.logger.info(f'{model_str} is done.')
 
     return res_nescqr, res_nescqr_cross, run_time
 
@@ -293,23 +310,24 @@ def main():
     logger.logger.info(f'X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}')
 
     ## Run
-    res_nescqr, res_nescqr_cross, run_time_nescqr = run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger)
+    res_nescqr_r, res_nescqr_r_cross, run_time_nescqr_r = run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger, replace=True)
+    res_nescqr_n, res_nescqr_n_cross, run_time_nescqr_n = run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger, replace=False)
     res_enbpi, res_enbpi_cross, run_time_enbpi = run_EnbPI(loader, x_size, args, save_dir_enbpi, logger)
     res_encqr, res_encqr_cross, run_time_encqr = run_EnCQR(loader, x_size, args, save_dir_encqr, logger)
 
     # Save results
-    methods = ['NESCQR', 'EnbPI', 'EnCQR']
-    dfs = [res_nescqr, res_enbpi, res_encqr]
+    methods = ['NESCQR_r', 'NESCQR_n', 'EnbPI', 'EnCQR']
+    dfs = [res_nescqr_r, res_nescqr_n, res_enbpi, res_encqr]
     concat_df = pd.concat(dfs, keys=methods, names=['Method'])
     if 'Unnamed: 0' in concat_df.columns:
         concat_df.drop(columns=['Unnamed: 0'], inplace=True)
     concat_df.reset_index(level=1, drop=True, inplace=True)
 
-    dfs_cross = [res_nescqr_cross, res_enbpi_cross, res_encqr_cross]
+    dfs_cross = [res_nescqr_r_cross, res_nescqr_n_cross, res_enbpi_cross, res_encqr_cross]
     concat_df_cross = pd.concat(dfs_cross, keys=methods, names=['Method'])
     if 'Unnamed: 0' in concat_df_cross.columns:
         concat_df_cross.drop(columns=['Unnamed: 0'], inplace=True)
-    concat_df_cross['Run_time'] = [run_time_nescqr, run_time_enbpi, run_time_encqr]
+    concat_df_cross['Run_time'] = [run_time_nescqr_r, run_time_nescqr_n, run_time_enbpi, run_time_encqr]
     concat_df_cross.reset_index(level=1, drop=True, inplace=True)
 
     excel_file = os.path.join(save_dir, 'summary.xlsx')

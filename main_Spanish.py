@@ -254,9 +254,9 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
 def main():
 
     # Logger
-    start_time = time.time()
+    start_time   = time.time()
     current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(start_time))
-    save_dir     = os.path.join("result", 'Wind Power', current_time)
+    save_dir     = os.path.join("result", 'Spanish', current_time)
     log_id       = 'main'
     log_name     = f'Run_{current_time}.log'
     log_level    = 'info'
@@ -283,17 +283,15 @@ def main():
         
     # Load data
     logger.logger.info('Loading data...')
-    data_path = './data/Kaggle Wind Power Forecasting Data/Turbine_Data.csv'
-    df        = pd.read_csv(data_path, parse_dates=["Unnamed: 0"])
-    df        = df[['ActivePower', 'WindDirection','WindSpeed']]
+    data_path = './data/International Spanish Data.csv'
+    df        = pd.read_csv(data_path)
+    df        = df[['onpower', 'ws0', 'wd0']]   # WS,WD,TEMPER,HUM,PRE,ws,onpower,wd
     df.dropna(axis=0, inplace=True)
-    df['WindDirection_sin'] = np.sin(df['WindDirection'])
-    df['WindDirection_cos'] = np.cos(df['WindDirection'])
-    df.drop('WindDirection', axis=1, inplace=True)
+
     logger.logger.info(f'data.shape: {df.shape}')
     x_size = len(df.columns)
 
-    label_column = 'ActivePower'
+    label_column = 'onpower'
     loader = TimeSeriesDataLoader(df, args['window_size'], label_column, args['scaler'],
                                   args['train_ratio'], args['val_ratio'], args['test_ratio'])
     X_train, Y_train = loader.get_train_data()

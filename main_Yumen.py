@@ -5,7 +5,6 @@ import pandas as pd
 import json
 import matplotlib.pyplot as plt
 from models import *
-# from Losses import *
 from Metrics import evaluate, cross_bound_check
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from algorithms import NESCQR, EnbPI, EnCQR
@@ -254,9 +253,9 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
 def main():
 
     # Logger
-    start_time = time.time()
+    start_time   = time.time()
     current_time = time.strftime("%Y_%m_%d_%H_%M_%S", time.localtime(start_time))
-    save_dir     = os.path.join("result", 'Wind Power', current_time)
+    save_dir     = os.path.join("result", 'Yumen', current_time)
     log_id       = 'main'
     log_name     = f'Run_{current_time}.log'
     log_level    = 'info'
@@ -275,7 +274,7 @@ def main():
         os.makedirs(save_dir_encqr)
     logger.logger.info(f'save_dir: {save_dir}')
 
-    with open('config.json', 'r') as f:
+    with open('config_yumen.json', 'r') as f:
         args = json.load(f)
     logger.logger.info('Parameters: ')
     for k, v in args.items():
@@ -283,17 +282,15 @@ def main():
         
     # Load data
     logger.logger.info('Loading data...')
-    data_path = './data/Kaggle Wind Power Forecasting Data/Turbine_Data.csv'
-    df        = pd.read_csv(data_path, parse_dates=["Unnamed: 0"])
-    df        = df[['ActivePower', 'WindDirection','WindSpeed']]
+    data_path = './data/yumen.csv'
+    df        = pd.read_csv(data_path)
+    df        = df[['onpower', 'ws', 'wd', 'TEMPER', 'HUM']]   # WS,WD,TEMPER,HUM,PRE,ws,onpower,wd
     df.dropna(axis=0, inplace=True)
-    df['WindDirection_sin'] = np.sin(df['WindDirection'])
-    df['WindDirection_cos'] = np.cos(df['WindDirection'])
-    df.drop('WindDirection', axis=1, inplace=True)
+
     logger.logger.info(f'data.shape: {df.shape}')
     x_size = len(df.columns)
 
-    label_column = 'ActivePower'
+    label_column = 'onpower'
     loader = TimeSeriesDataLoader(df, args['window_size'], label_column, args['scaler'],
                                   args['train_ratio'], args['val_ratio'], args['test_ratio'])
     X_train, Y_train = loader.get_train_data()
