@@ -1,4 +1,10 @@
-data/
+__pycache__/
+
+data/__pycache__
+
+data/Kaggle Wind Power Forecasting Data
+
+data/Kaggle Wind Turbine Power (kW) Generation Data
 
 result/
 
@@ -12,4 +18,3 @@ venv/
 
 test_plot.py
 
-decorator.py

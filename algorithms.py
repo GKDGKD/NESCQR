@@ -295,6 +295,9 @@ class EnbPI():
         if step == None:
             step = self.batch_size
 
+        if step > len(Y_test):
+            step = len(Y_test)
+
         res_train = self.predict_point(X_train)
         res_test = self.predict_point(X_test)
         test_size = res_test.shape[0]

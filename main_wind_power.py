@@ -83,8 +83,9 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger, replace=None):
     logger.logger.info(f'Evaluating {model_str}...')
     Y_test_original  = loader.inverse_transform(Y_test, is_label=True)
     PI_nescqr        = loader.inverse_transform(PI_nescqr, is_label=True)
-    res_nescqr       = evaluate(Y_test_original, PI_nescqr, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_NESCQR, Logger=logger)
-    res_nescqr_cross = cross_bound_check(PI_nescqr, saveflag=args['saveflag'], save_dir=save_dir_NESCQR, Logger=logger)
+    res_nescqr       = evaluate(Y_test_original, PI_nescqr, args['alpha_set'], saveflag=args['saveflag'], save_dir=save_dir_NESCQR, Logger=logger, title=model_str)
+    res_nescqr_cross = cross_bound_check(PI_nescqr, saveflag=args['saveflag'], save_dir=save_dir_NESCQR, Logger=logger, title=model_str)
+
 
     cols = [str(round(alpha/2, 3)) for alpha in args['alpha_set']] + \
             [str(round(1-alpha/2, 3)) for alpha in reversed(args['alpha_set'])]
@@ -286,11 +287,11 @@ def main():
     data_path = './data/Kaggle Wind Power Forecasting Data/Turbine_Data.csv'
     df        = pd.read_csv(data_path, parse_dates=["Unnamed: 0"])
     df        = df[['ActivePower', 'WindDirection','WindSpeed']]
+    logger.logger.info(f'The original data.shape: {df.shape}')
     df.dropna(axis=0, inplace=True)
     df['WindDirection_sin'] = np.sin(df['WindDirection'])
     df['WindDirection_cos'] = np.cos(df['WindDirection'])
     df.drop('WindDirection', axis=1, inplace=True)
-    logger.logger.info(f'data.shape: {df.shape}')
     x_size = len(df.columns)
 
     label_column = 'ActivePower'

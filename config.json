@@ -3,7 +3,7 @@
     "train_ratio"  : 0.7,                      
     "val_ratio"    : 0.15,                     
     "test_ratio"   : 0.15,                     
-    "window_size"  : 2,                       
+    "window_size"  : 6,                       
     "n_ensembles"  : 3,                       
     "max_epochs"   : 300,                      
     "l_rate"       : 1e-4,                    

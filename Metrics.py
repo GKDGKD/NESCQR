@@ -185,7 +185,7 @@ def metrics(y_test, y_lower, y_upper, alpha, ita=0.5, saveflag=False, save_dir=N
     else:
         return df
 
-def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, Logger=None):
+def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, Logger=None, title=None):
     """
     对所有预测区间进行评估。
 
@@ -247,14 +247,18 @@ def evaluate(y_test, PIs, alpha_set, ita=0.5, saveflag=False, save_dir=None, Log
 
     result_df = pd.DataFrame(result, columns=['PINC','MAE', 'MSE', 'RMSE', 'CRPS', 'SDE', 'PICP', 'MPIW', 'F', 'PINAW', 'ACE', 'CWC', 'Interval score'])
     if saveflag:
-        result_df.to_csv(os.path.join(save_dir, 'metrics.csv'))
-        print('Metrics are saved to {}'.format(os.path.join(save_dir, 'metrics.csv')))
+        if title is not None:
+            result_df.to_csv(os.path.join(save_dir, 'metrics_' + title + '.csv'))
+            print('Metrics are saved to {}'.format(os.path.join(save_dir, title + '.csv')))
+        else:
+            result_df.to_csv(os.path.join(save_dir, 'metrics.csv'))
+            print('Metrics are saved to {}'.format(os.path.join(save_dir, 'metrics.csv')))
         return result_df
     else:
         return result_df
 
 
-def cross_bound_check(prediction, saveflag=False, save_dir=None, Logger=None):
+def cross_bound_check(prediction, saveflag=False, save_dir=None, Logger=None, title=None):
     '''
     检查是否有区间耦合、交叉现象。
     
@@ -329,8 +333,12 @@ def cross_bound_check(prediction, saveflag=False, save_dir=None, Logger=None):
 
     df = pd.DataFrame({'MUCW': [MUCW], 'MLCW': [MLCW], 'Cross loss': [Cross_loss]})
     if saveflag:
-        df.to_csv(os.path.join(save_dir, 'metrics_cross.csv'))
-        print('Metrics for quantile crossing are saved to {}'.format(os.path.join(save_dir, 'metrics_cross.csv')))
+        if title is not None:
+            df.to_csv(os.path.join(save_dir, 'metrics_cross_' + title + '.csv'))
+            print('Metrics for quantile crossing are saved to {}'.format(os.path.join(save_dir, 'metrics_cross_' + title + '.csv')))
+        else:
+            df.to_csv(os.path.join(save_dir, 'metrics_cross.csv'))
+            print('Metrics for quantile crossing are saved to {}'.format(os.path.join(save_dir, 'metrics_cross.csv')))
         return df
     else:
         return df
