@@ -7,7 +7,7 @@ This repository is the implementation of the paper: A novel wind power interval 
 Install the environment dependencies using the following command:
 
 ```bash
-conda create -n nescqr
+conda create -n nescqr python=3.9
 conda activate nescqr
 pip install -r requirements.txt
 ```
@@ -25,8 +25,8 @@ Here's an example for Windows. It's recommended to install [MikTeX](https://mikt
 ### 3. Download and extract data
 Create a new folder named `data`, and then download the datasets into the `data` folder. Below are the two wind power datasets used in this study:
 
-[1] [Kaggle: Wind Power Forecasting](https://www.kaggle.com/datasets/theforcecoder/wind-power-forecasting/) 
-[2] [Kaggle: Wind Turbine Power (kW) Generation Data](https://www.kaggle.com/datasets/psycon/wind-turbine-energy-kw-generation-data/data)
+[1] [Kaggle: Wind Power Forecasting](https://www.kaggle.com/datasets/theforcecoder/wind-power-forecasting/) <br>
+[2] [Kaggle: Wind Turbine Power (kW) Generation Data](https://www.kaggle.com/datasets/psycon/wind-turbine-energy-kw-generation-data/data) <br>
 
 After downloading, unzip these two datasets into the `'./NESCQR/data/'` directory.
 
@@ -39,4 +39,4 @@ Run the experiments on the wind power dataset with the following command:
 The same as the wind turbine dataset:
 `python main_wind_turbine.py`
 
-Once the execution is complete, you can find the results for all methods in the `result` folder.
+Once the execution is complete, you can find the results for all methods in the `./NESCQR/result/` folder.
