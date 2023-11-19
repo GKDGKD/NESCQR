@@ -23,20 +23,24 @@ Here's an example for Windows. It's recommended to install [MikTeX](https://mikt
 
 
 ### 3. Download and extract data
-Create a new folder named `data`, and then download the datasets into the `data` folder. Below are the two wind power datasets used in this study:
+Download the datasets into the `./NESCQR/data/` folder. Below are the two public datasets used in this study:
 
 [1] [Kaggle: Wind Power Forecasting](https://www.kaggle.com/datasets/theforcecoder/wind-power-forecasting/) <br>
 [2] [Kaggle: Wind Turbine Power (kW) Generation Data](https://www.kaggle.com/datasets/psycon/wind-turbine-energy-kw-generation-data/data) <br>
 
 After downloading, unzip these two datasets into the `'./NESCQR/data/'` directory.
 
+In addition, `International Spanish Data.csv` and `yumen.csv` are two private datasets used in this paper.
+
 ### 4. Run
 It is recommended to use a GPU for running the experiments. You can modify the parameters in the `config.json` file.
 
-Run the experiments on the wind power dataset with the following command:
+Run the experiments on the wind power dataset with the command:
 `python main_wind_power.py`
 
-The same as the wind turbine dataset:
-`python main_wind_turbine.py`
+The same as the other datasets:
+`python main_wind_turbine.py` <br>
+`python main_Spanish.py` <br>
+`python main_Yumen.py` <br>
 
 Once the execution is complete, you can find the results for all methods in the `./NESCQR/result/` folder.

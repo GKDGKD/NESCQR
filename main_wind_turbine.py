@@ -105,7 +105,19 @@ def run_NESCQR(loader, x_size, args, save_dir_NESCQR, logger, replace=None):
 
 
 def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
-
+    """
+    Run the EnbPI algorithm.
+    Args:
+        loader: The data loader object.
+        x_size: Number of features in X_train, int.
+        args: The arguments for the EnbPI algorithm.
+        save_dir_enbpi: The directory to save the results.
+        logger: The logger object.
+    Returns:
+        res_enbpi: The evaluation results of EnbPI.
+        res_enbpi_cross: The cross boundary check results of EnbPI.
+        run_time: The running time of EnbPI.
+    """
     logger.logger.info(f'EnbPI starts.')
     X_train, Y_train = loader.get_train_data(to_tensor=True)
     X_val  , Y_val   = loader.get_val_data(to_tensor=True)
@@ -130,12 +142,6 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
                 [f'LSTM_{h}' for h in hidden_units] + \
                 [f'GRU_{h}' for h in hidden_units] + \
                 [f'TCN_{c}' for c in channel_sizes]
-    
-    ## Homogeneous models
-    # model_pool_enbpi = [TCN(x_size, 1, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
-    # label_model_pool = [f'TCN_{args["channel_size"]}']*3 # 全用TCN表现太好了，预测区间都快重合成一条线了
-    # model_pool_enbpi = [LSTM(input_dim, args['hidden'], 1, args['device'])] * args['n_ensembles']
-    # label_model_pool = [f'LSTM_{args["hidden"]}']*3  # LSTM表现也太好了，预测区间约等于回归预测加减一个小数
 
     logger.logger.info(f'model_pool_enbpi: {label_model_pool}')
     enbpi = EnbPI(model_pool_enbpi, args['alpha_set'], args['l_rate'], args['max_epochs'],
@@ -171,7 +177,19 @@ def run_EnbPI(loader, x_size, args, save_dir_enbpi, logger):
     return res_enbpi, res_enbpi_cross, run_time
 
 def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
-
+    """
+    Run the EnCQR algorithm.
+    Args:
+        loader: The data loader object.
+        x_size: Number of features in X_train, int.
+        args: Dictionary of arguments.
+        save_dir_encqr: The directory to save the results.
+        logger: The logger object.
+    Returns:
+        res_encqr: The evaluation results of EnCQR.
+        res_encqr_cross: The cross-bound check results of EnCQR.
+        run_time: The running time of EnCQR.
+    """
     logger.logger.info(f'EnCQR starts.')
     X_train, Y_train = loader.get_train_data(to_tensor=True)
     X_val  , Y_val   = loader.get_val_data(to_tensor=True)
@@ -195,19 +213,6 @@ def run_EnCQR(loader, x_size, args, save_dir_encqr, logger):
                 [f'GRU_{h}' for h in hidden_units] + \
                 [f'TCN_{c}' for c in channel_sizes]
     
-    # model_pool_encqr = [NET(input_dim, h, out_dim_encqr, args['activation_fn']) for h in hidden_units] + \
-    #             [LSTM(input_dim, h, out_dim_encqr, args['device']) for h in hidden_units] + \
-    #             [TCN(x_size, out_dim_encqr, [c]*2, args['kernel_size'], args['dropout']) for c in channel_sizes]
-    # label_model_pool = [f'NET_{h}' for h in hidden_units] + \
-    #             [f'LSTM_{h}' for h in hidden_units] + \
-    #             [f'TCN_{c}' for c in channel_sizes]
-
-    # Homogenous models
-    # model_pool_encqr = [TCN(x_size, out_dim_encqr, [args['channel_size']]*2, args['kernel_size'], args['dropout'])] * args['n_ensembles']
-    # label_model_pool = [f'TCN_{args["channel_size"]}']*3
-    # model_pool_encqr = [LSTM(input_dim, args['hidden'], out_dim_encqr, args['device'])] * args['n_ensembles']
-    # label_model_pool = [f'LSTM_{args["hidden"]}']*3 
-
     logger.logger.info(f'model_pool_encqr: {label_model_pool}')
     B = len(model_pool_encqr)
     batch_len = int(np.floor(X_train.shape[0]/B))

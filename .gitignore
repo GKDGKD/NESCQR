@@ -19,3 +19,5 @@ venv/
 test_plot.py
 
 concat_dataframe.py
+
+config_yumen.json
